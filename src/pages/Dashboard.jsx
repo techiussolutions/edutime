@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, UserMinus, AlertTriangle, CalendarCheck,
@@ -9,9 +10,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
+import SetupWizard from '../components/SetupWizard';
 
 export default function Dashboard() {
-  const { state } = useApp();
+  const { state, dbLoaded } = useApp();
+  const { isAdmin, isSuperAdmin } = useAuth();
+
+  // Show setup wizard on first login for school admins
+  const [showSetup, setShowSetup] = useState(false);
+  useEffect(() => {
+    if (!dbLoaded || isSuperAdmin) return;
+    const done = localStorage.getItem('edu_setup_done');
+    if (!done && (isAdmin || !done)) {
+      setShowSetup(true);
+    }
+  }, [dbLoaded, isAdmin, isSuperAdmin]);
   const navigate = useNavigate();
   const today = new Date().toISOString().split('T')[0];
   const todayDay = new Date().getDay(); // 0=Sun, 1=Mon...
@@ -38,6 +51,7 @@ export default function Dashboard() {
 
   return (
     <div className="anim-fade-up">
+      {showSetup && <SetupWizard onComplete={() => setShowSetup(false)} />}
       <div className="page-header">
         <div>
           <h2>Good morning 👋</h2>

@@ -169,8 +169,8 @@ export default function SettingsPage() {
                   </thead>
                   <tbody>
                     {settings.periodTimings.map(p => (
-                      <tr key={p.period} style={{ borderBottom:'1px solid var(--border)', background: p.isBreak ? 'var(--bg-muted)' : undefined }}>
-                        <td style={{ padding:'.5rem .75rem', fontWeight:700, color: p.isBreak ? 'var(--tx-muted)' : 'var(--clr-primary)' }}>{p.period}</td>
+                      <tr key={p.period} style={{ borderBottom:'1px solid var(--border)', background: p.isBreak ? 'var(--clr-amber-l)' : undefined }}>
+                        <td style={{ padding:'.5rem .75rem', fontWeight:700, color: p.isBreak ? 'var(--clr-amber)' : 'var(--clr-primary)' }}>{p.period}</td>
                         <td style={{ padding:'.5rem .75rem' }}>
                           <input className="input input-sm" value={p.label} onChange={e=>updatePeriod(p.period,'label',e.target.value)} onBlur={toast} style={{ width:140 }}/>
                         </td>
