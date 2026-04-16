@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     }).join(', ');
     const vals = entries.map(([k, v]) => k === 'permissions' ? JSON.stringify(v) : v);
 
-    await db(`UPDATE user_profiles SET ${sets} WHERE id = $1`, [userId, ...vals]);
+    await db.query(`UPDATE user_profiles SET ${sets} WHERE id = $1`, [userId, ...vals]);
     return res.json({ ok: true });
   }
 

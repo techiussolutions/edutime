@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     // Build safe update — only allowed column names
     const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(', ');
     const vals = entries.map(([, v]) => v);
-    await db(`UPDATE schools SET ${sets} WHERE id = $1`, [schoolId, ...vals]);
+    await db.query(`UPDATE schools SET ${sets} WHERE id = $1`, [schoolId, ...vals]);
 
     return res.json({ ok: true });
   }
