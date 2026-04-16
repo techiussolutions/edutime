@@ -72,14 +72,14 @@ const buildAvailabilityMap = (rows) => {
 async function loadSchoolData(schoolId) {
   const [settRes, tchRes, clsRes, subRes, asgRes, slotRes, avRes, absRes, subsRes] = await Promise.all([
     supabase.from('school_settings').select('*').eq('school_id', schoolId).maybeSingle(),
-    supabase.from('teachers').select('*').eq('school_id', schoolId),
-    supabase.from('classes').select('*').eq('school_id', schoolId),
-    supabase.from('subjects').select('*').eq('school_id', schoolId),
-    supabase.from('class_subject_assignments').select('*').eq('school_id', schoolId),
-    supabase.from('timetable_slots').select('*').eq('school_id', schoolId),
-    supabase.from('teacher_availability').select('*').eq('school_id', schoolId),
-    supabase.from('absences').select('*').eq('school_id', schoolId).order('date', { ascending: false }),
-    supabase.from('substitutions').select('*').eq('school_id', schoolId).order('date', { ascending: false }),
+    supabase.from('teachers').select('id,name,department,subjects,max_periods,phone,email,designation,joining,active').eq('school_id', schoolId),
+    supabase.from('classes').select('id,name,grade,section,grade_group,class_teacher_id').eq('school_id', schoolId),
+    supabase.from('subjects').select('id,name,code,grade_groups').eq('school_id', schoolId),
+    supabase.from('class_subject_assignments').select('id,class_id,subject_id,teacher_id').eq('school_id', schoolId),
+    supabase.from('timetable_slots').select('id,class_id,day,period,teacher_id,subject_id,is_locked').eq('school_id', schoolId),
+    supabase.from('teacher_availability').select('teacher_id,day_key,period,available').eq('school_id', schoolId),
+    supabase.from('absences').select('id,teacher_id,date,leave_type,reason').eq('school_id', schoolId).order('date', { ascending: false }).limit(500),
+    supabase.from('substitutions').select('id,date,day,period,schedule_id,absent_teacher_id,substitute_teacher_id,assigned_by').eq('school_id', schoolId).order('date', { ascending: false }).limit(500),
   ]);
 
   const isEmpty = !tchRes.data?.length && !clsRes.data?.length && !subRes.data?.length;
@@ -153,8 +153,8 @@ async function syncActionToSupabase(action, schoolId) {
       break;
     case 'SET_CLASS_ASSIGNMENTS': {
       const { classId, assignments } = action.payload;
-      await supabase.from('class_subject_assignments').delete().eq('class_id', classId).eq('school_id', schoolId);
       const rows = assignments.filter(a => a.teacherId).map((a, i) => mapAssignToDb({ id: `ca_${classId}_${a.subjectId}_${i}`, classId, subjectId: a.subjectId, teacherId: a.teacherId }, schoolId));
+      await supabase.from('class_subject_assignments').delete().eq('class_id', classId).eq('school_id', schoolId);
       if (rows.length) await supabase.from('class_subject_assignments').upsert(rows);
       break;
     }
@@ -168,7 +168,6 @@ async function syncActionToSupabase(action, schoolId) {
       await supabase.from('timetable_slots').delete().eq('id', action.payload).eq('school_id', schoolId);
       break;
     case 'BULK_SET_SCHEDULE': {
-      // Delete unlocked slots, re-insert
       await supabase.from('timetable_slots').delete().eq('school_id', schoolId).eq('is_locked', false);
       const rows = (action.payload || []).map(s => mapSlotToDb(s, schoolId));
       if (rows.length) await supabase.from('timetable_slots').upsert(rows);
@@ -185,12 +184,9 @@ async function syncActionToSupabase(action, schoolId) {
       break;
     case 'SET_TEACHER_AVAILABILITY': {
       const { teacherId, availability } = action.payload;
-      // Delete existing rows for this teacher, then re-insert
+      const rows = availability ? flattenAvailability({ [teacherId]: availability }, schoolId) : [];
       await supabase.from('teacher_availability').delete().eq('teacher_id', teacherId).eq('school_id', schoolId);
-      if (availability) {
-        const rows = flattenAvailability({ [teacherId]: availability }, schoolId);
-        if (rows.length) await supabase.from('teacher_availability').upsert(rows);
-      }
+      if (rows.length) await supabase.from('teacher_availability').upsert(rows);
       break;
     }
     case 'MARK_ABSENT':

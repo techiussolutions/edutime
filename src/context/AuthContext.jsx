@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
       // 2. ONE query — joins school inline, no second round-trip
       const { data: prof, error: profErr } = await supabase
         .from('user_profiles')
-        .select('*, schools(*)')
+        .select('id, name, role, school_id, active, permissions, last_login, schools(id, code, name, board, academic_year, address, logo)')
         .eq('id', userId)
         .single();
 
@@ -237,7 +237,7 @@ export function AuthProvider({ children }) {
   const listUsers = async () => {
     const { data, error: err } = await supabase
       .from('user_profiles')
-      .select('*, schools(code, name)')
+      .select('id, name, role, active, email:id, permissions, created_at, schools(code, name)')
       .eq('school_id', profile?.school_id)
       .order('created_at', { ascending: true });
     return { data, error: err };
@@ -274,12 +274,15 @@ export function AuthProvider({ children }) {
   };
 
   // List ALL users across ALL schools (super admin only)
-  const listAllUsers = async () => {
-    const { data, error: err } = await supabase
+  const listAllUsers = async (page = 0, pageSize = 50) => {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error: err, count } = await supabase
       .from('user_profiles')
-      .select('*, schools(code, name)')
-      .order('created_at', { ascending: false });
-    return { data, error: err };
+      .select('id, name, role, active, school_id, permissions, created_at, schools(code, name)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    return { data, error: err, count };
   };
 
   // ── Helpers ──────────────────────────────────────────────────
