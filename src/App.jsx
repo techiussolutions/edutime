@@ -16,6 +16,9 @@ import ClassesPage           from './pages/master/ClassesPage';
 import SubjectsPage          from './pages/master/SubjectsPage';
 import TeacherAvailabilityPage from './pages/master/TeacherAvailabilityPage';
 import UserManagementPage    from './pages/admin/UserManagementPage';
+import SchoolsManagementPage from './pages/platform/SchoolsManagementPage';
+import PlatformDashboard    from './pages/platform/PlatformDashboard';
+import PlatformUsersPage    from './pages/platform/PlatformUsersPage';
 
 /* ── Auth guard: must be logged in ────────────────────────── */
 function AuthGuard({ children }) {
@@ -29,6 +32,13 @@ function AuthGuard({ children }) {
 function PermGuard({ perm, children }) {
   const { can } = useAuth();
   if (!can(perm)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+/* ── Super Admin guard: strictly super admin ──────────────── */
+function SuperAdminGuard({ children }) {
+  const { isSuperAdmin } = useAuth();
+  if (!isSuperAdmin) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -54,17 +64,18 @@ function LoadingScreen() {
 
 /* ── Routes ───────────────────────────────────────────────── */
 function AppRoutes() {
-  const { isLoggedIn, loading } = useAuth();
+  const { isLoggedIn, loading, isSuperAdmin } = useAuth();
+  const home = isSuperAdmin ? '/platform' : '/dashboard';
 
   if (loading) return <LoadingScreen />;
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+        <Route path="/login" element={isLoggedIn ? <Navigate to={home} replace /> : <LoginPage />} />
 
         <Route path="/" element={<AuthGuard><AppShell /></AuthGuard>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to={home} replace />} />
           <Route path="dashboard"        element={<Dashboard />} />
           <Route path="timetable"        element={<TimetablePage />} />
           <Route path="daily-timetable"  element={<DailyTimetablePage />} />
@@ -82,6 +93,11 @@ function AppRoutes() {
           {/* Admin only */}
           <Route path="settings" element={<PermGuard perm="manageSettings"><SettingsPage /></PermGuard>} />
           <Route path="admin/users" element={<PermGuard perm="manageUsers"><UserManagementPage /></PermGuard>} />
+          
+          {/* Platform Admin only */}
+          <Route path="platform" element={<SuperAdminGuard><PlatformDashboard /></SuperAdminGuard>} />
+          <Route path="platform/schools" element={<SuperAdminGuard><SchoolsManagementPage /></SuperAdminGuard>} />
+          <Route path="platform/users"   element={<SuperAdminGuard><PlatformUsersPage /></SuperAdminGuard>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

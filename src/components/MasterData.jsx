@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from '../context/StoreContext';
+import { useApp as useStore } from '../store/AppStore';
 
 export default function MasterData() {
   const { state } = useStore();

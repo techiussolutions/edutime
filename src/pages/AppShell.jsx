@@ -4,7 +4,8 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Calendar, CalendarClock, UserCheck, Users, BookOpen,
-  Settings, LogOut, Bell, Search, ChevronRight, GraduationCap, Menu, X, CalendarCheck
+  Settings, LogOut, Bell, ChevronRight, GraduationCap, Menu, X, CalendarCheck,
+  ShieldAlert, Globe, School
 } from 'lucide-react';
 
 const NAV = [
@@ -22,7 +23,7 @@ const MASTER = [
 
 export default function AppShell() {
   const { state, dispatch } = useApp();
-  const { profile, school: authSchool, signOut, isAdmin } = useAuth();
+  const { profile, school: authSchool, signOut, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const school = authSchool || state.school;
@@ -40,7 +41,7 @@ export default function AppShell() {
 
   const logout = async () => {
     await signOut();
-    navigate('/login');
+    // AuthGuard detects isLoggedIn = false and redirects to /login automatically
   };
 
   return (
@@ -64,41 +65,66 @@ export default function AppShell() {
         </div>
 
         <nav className="sidebar-nav" style={{ paddingTop: '1rem' }}>
-          <div className="sidebar-section-label">Main</div>
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <Icon size={18} />
-              {label}
-              {label === 'Substitutions' && pendingSubs > 0 && (
-                <span className="nav-badge">{pendingSubs}</span>
+          {/* ── SCHOOL-LEVEL NAV (hidden for super admins) ── */}
+          {!isSuperAdmin && (
+            <>
+              <div className="sidebar-section-label">Main</div>
+              {NAV.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <Icon size={18} />
+                  {label}
+                  {label === 'Substitutions' && pendingSubs > 0 && (
+                    <span className="nav-badge">{pendingSubs}</span>
+                  )}
+                </NavLink>
+              ))}
+
+              <div className="sidebar-section-label" style={{ marginTop: '.75rem' }}>Master Data</div>
+              {MASTER.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <Icon size={18} />
+                  {label}
+                </NavLink>
+              ))}
+
+              <div className="sidebar-section-label" style={{ marginTop: '.75rem' }}>Administration</div>
+              <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <Settings size={18} /> Settings
+              </NavLink>
+              {isAdmin && (
+                <NavLink to="/admin/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <Users size={18} /> Users
+                </NavLink>
               )}
-            </NavLink>
-          ))}
+            </>
+          )}
 
-          <div className="sidebar-section-label" style={{ marginTop: '.75rem' }}>Master Data</div>
-          {MASTER.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <Icon size={18} />
-              {label}
-            </NavLink>
-          ))}
-
-          <div className="sidebar-section-label" style={{ marginTop: '.75rem' }}>Administration</div>
-          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Settings size={18} /> Settings
-          </NavLink>
-          {isAdmin && (
-            <NavLink to="/admin/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <Users size={18} /> Users
-            </NavLink>
+          {/* ── PLATFORM ADMIN NAV (only for super admin) ── */}
+          {isSuperAdmin && (
+            <>
+              <div className="sidebar-section-label" style={{ color: '#818cf8', opacity: 1 }}>Platform Admin</div>
+              <NavLink to="/platform" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <Globe size={18} /> Overview
+              </NavLink>
+              <NavLink to="/platform/schools" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <School size={18} /> Schools
+              </NavLink>
+              <NavLink to="/platform/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <Users size={18} /> All Users
+              </NavLink>
+              <div className="sidebar-section-label" style={{ marginTop: '.75rem' }}>Account</div>
+              <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <Settings size={18} /> Settings
+              </NavLink>
+            </>
           )}
         </nav>
 
         <div className="sidebar-footer">
           <div className="school-chip">
-            <div className="ava">{school.logo}</div>
+            <div className="ava">{isSuperAdmin ? <ShieldAlert size={18} color="white"/> : school?.logo}</div>
             <div className="info">
-              <p className="truncate" style={{ maxWidth: 160 }}>{school.name}</p>
+              <p className="truncate" style={{ maxWidth: 160 }}>{isSuperAdmin ? 'Global Platform' : school?.name}</p>
               <small>{profile?.name} · {profile?.role}</small>
             </div>
           </div>
@@ -116,7 +142,7 @@ export default function AppShell() {
               <Menu size={20} />
             </button>
             <div className="breadcrumb">
-              <span>{school.name}</span>
+              <span>{isSuperAdmin ? 'EduTime Network' : school?.name}</span>
               <ChevronRight size={14} />
               <span className="crumb-active">Portal</span>
             </div>

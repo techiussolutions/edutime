@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from '../context/StoreContext';
+import { useApp as useStore } from '../store/AppStore';
 import { Users, AlertCircle, CalendarCheck, Clock, UserMinus } from 'lucide-react';
 
 export default function Dashboard() {

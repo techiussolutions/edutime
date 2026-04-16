@@ -5,9 +5,10 @@ const AuthContext = createContext(null);
 
 // ── Default permission sets by role ────────────────────────────
 const ROLE_DEFAULTS = {
-  admin:   { viewTimetable: true, editTimetable: true, manageSubstitutions: true, manageMasterData: true, manageSettings: true, manageUsers: true },
-  teacher: { viewTimetable: true, editTimetable: false, manageSubstitutions: true, manageMasterData: false, manageSettings: false, manageUsers: false },
-  viewer:  { viewTimetable: true, editTimetable: false, manageSubstitutions: false, manageMasterData: false, manageSettings: false, manageUsers: false },
+  super_admin: { viewTimetable: true, editTimetable: true, manageSubstitutions: true, manageMasterData: true, manageSettings: true, manageUsers: true },
+  admin:       { viewTimetable: true, editTimetable: true, manageSubstitutions: true, manageMasterData: true, manageSettings: true, manageUsers: true },
+  teacher:     { viewTimetable: true, editTimetable: false, manageSubstitutions: true, manageMasterData: false, manageSettings: false, manageUsers: false },
+  viewer:      { viewTimetable: true, editTimetable: false, manageSubstitutions: false, manageMasterData: false, manageSettings: false, manageUsers: false },
 };
 
 export function AuthProvider({ children }) {
@@ -17,59 +18,106 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
 
-  // ── Fetch profile + school for a given user id ───────────────
-  const fetchProfile = useCallback(async (userId) => {
+  // Flag to suppress auth listener during user creation (prevents redirect on signUp)
+  const suppressAuthEvents = React.useRef(false);
+
+  // ── Profile cache helpers (sessionStorage = clears on tab close) ──────────
+  const CACHE_KEY = 'edu_profile_cache';
+  const saveCache = (prof, sch) => {
+    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ prof, sch, ts: Date.now() })); } catch {}
+  };
+  const loadCache = () => {
     try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const { prof, sch, ts } = JSON.parse(raw);
+      // Discard cache older than 5 minutes
+      if (Date.now() - ts > 5 * 60 * 1000) { sessionStorage.removeItem(CACHE_KEY); return null; }
+      return { prof, sch };
+    } catch { return null; }
+  };
+  const clearCache = () => { try { sessionStorage.removeItem(CACHE_KEY); } catch {} };
+
+  // ── Fetch profile + school — single joined query ──────────────
+  const fetchProfile = useCallback(async (userId) => {
+    // 1. Paint instantly from cache while real fetch runs in background
+    const cached = loadCache();
+    if (cached?.prof?.id === userId) {
+      setProfile(cached.prof);
+      setSchool(cached.sch);
+    }
+
+    try {
+      // 2. ONE query — joins school inline, no second round-trip
       const { data: prof, error: profErr } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('*, schools(*)')
         .eq('id', userId)
         .single();
 
-      if (profErr) throw profErr;
-      if (!prof) throw new Error('No user profile found');
-      if (!prof.active) throw new Error('Account is deactivated');
+      if (profErr) {
+        if (profErr.code === 'PGRST116') {
+          throw new Error('No user profile found. Contact your administrator.');
+        }
+        // Other DB/RLS error — keep session alive, use cached data if available
+        console.error('[AuthContext] Profile fetch error:', profErr.message);
+        return;
+      }
 
-      setProfile(prof);
+      if (!prof) throw new Error('No user profile found.');
+      if (!prof.active) throw new Error('Your account has been deactivated. Contact your administrator.');
 
-      // Fetch school
-      const { data: sch, error: schErr } = await supabase
-        .from('schools')
-        .select('*')
-        .eq('id', prof.school_id)
-        .single();
+      // Separate the joined school from the profile object
+      const { schools: sch, ...profileData } = prof;
+      setProfile(profileData);
+      setSchool(sch ?? null);
+      setError(null);
 
-      if (schErr) throw schErr;
-      setSchool(sch);
-
-      // Update last_login
-      await supabase
-        .from('user_profiles')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', userId);
+      // 3. Update cache
+      saveCache(profileData, sch ?? null);
 
     } catch (err) {
-      console.error('[AuthContext] fetchProfile error:', err);
+      console.error('[AuthContext] fetchProfile fatal:', err.message);
       setError(err.message);
       setProfile(null);
       setSchool(null);
+      clearCache();
+      await supabase.auth.signOut();
     }
   }, []);
 
+
   // ── Listen for auth state changes ────────────────────────────
   useEffect(() => {
-    // Get initial session
+    // Safety net: if loading is still true after 8s, force it off
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
+    // Get initial session on mount
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       if (s?.user) {
-        fetchProfile(s.user.id).finally(() => setLoading(false));
+        fetchProfile(s.user.id).finally(() => {
+          clearTimeout(loadingTimeout);
+          setLoading(false);
+        });
       } else {
+        clearTimeout(loadingTimeout);
         setLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(loadingTimeout);
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
+      async (event, s) => {
+        // Skip INITIAL_SESSION — already handled by getSession() above
+        if (event === 'INITIAL_SESSION') return;
+        // Skip events fired during user creation (signUp swaps the session temporarily)
+        if (suppressAuthEvents.current) return;
+
         setSession(s);
         if (s?.user) {
           await fetchProfile(s.user.id);
@@ -80,10 +128,13 @@ export function AuthProvider({ children }) {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(loadingTimeout);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
-  // ── Sign in ──────────────────────────────────────────────────
+  // ── Sign in ─────────────────────────────────────────────────
   const signIn = async (email, password) => {
     setError(null);
     const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
@@ -91,84 +142,78 @@ export function AuthProvider({ children }) {
       setError(authErr.message);
       return { error: authErr };
     }
-
-    // Fetch profile and check active status
-    const { data: prof } = await supabase
-      .from('user_profiles')
-      .select('active')
+    // onAuthStateChange fires next and calls fetchProfile, which checks active status.
+    // Fire last_login update in background — don’t await it during login.
+    supabase.from('user_profiles')
+      .update({ last_login: new Date().toISOString() })
       .eq('id', data.user.id)
-      .single();
-
-    if (prof && !prof.active) {
-      await supabase.auth.signOut();
-      const deactivatedErr = new Error('Your account has been deactivated. Contact your school admin.');
-      setError(deactivatedErr.message);
-      return { error: deactivatedErr };
-    }
-
+      .then(() => {});
     return { data };
   };
 
   // ── Sign out ─────────────────────────────────────────────────
   const signOut = async () => {
-    setError(null);
-    await supabase.auth.signOut();
+    // Clear cache + local state immediately so AuthGuard redirects right away
+    clearCache();
     setProfile(null);
     setSchool(null);
     setSession(null);
+    setError(null);
+    await supabase.auth.signOut();
   };
 
   // ── Admin: Create user ───────────────────────────────────────
-  const createUser = async ({ email, password, name, role, permissions }) => {
-    const perms = permissions || ROLE_DEFAULTS[role] || ROLE_DEFAULTS.viewer;
-
-    // Use Supabase's admin invite (via service key) or our own fallback approach
-    // Since we don't have service role key on client, we create via signUp + profile insert
-    // The admin needs to be logged in, so we use a workaround:
-    // 1. Sign up the new user with supabase.auth.signUp (they get auto-confirmed if settings allow)
-    // 2. Insert their profile (RLS allows because admin's school_id matches)
-
-    // Save current session
+  // The DB trigger `on_auth_user_created` (006_user_trigger.sql) creates
+  // the user_profiles row automatically using the metadata passed here.
+  const createUser = async ({ email, password, name, role, schoolId }) => {
+    // Save admin session before signUp replaces it
     const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-    // Sign up new user
-    const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name, role }, // stored in auth.users raw_user_meta_data
-      }
-    });
+    const targetSchoolId = profile?.role === 'super_admin'
+      ? (schoolId || null)
+      : profile?.school_id;
 
-    if (signUpErr) return { error: signUpErr };
-
-    const newUserId = signUpData.user?.id;
-    if (!newUserId) return { error: new Error('Failed to create user') };
-
-    // Re-authenticate as admin (signUp may have changed the session)
-    if (currentSession) {
-      await supabase.auth.setSession({
-        access_token: currentSession.access_token,
-        refresh_token: currentSession.refresh_token,
+    // Suppress auth listener so signUp's session swap doesn't redirect admin to /login
+    suppressAuthEvents.current = true;
+    let newUserId = null;
+    try {
+      // Pass profile data as metadata — the DB trigger reads these fields
+      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name, role, school_id: targetSchoolId || '' },
+          emailRedirectTo: null,
+        },
       });
+
+      if (signUpErr) return { error: signUpErr };
+
+      newUserId = signUpData.user?.id;
+      if (!newUserId) {
+        return { error: new Error('Failed to create user — this email may already be registered.') };
+      }
+    } finally {
+      // Always restore admin session and re-enable listener
+      if (currentSession) {
+        await supabase.auth.setSession({
+          access_token:  currentSession.access_token,
+          refresh_token: currentSession.refresh_token,
+        });
+      }
+      suppressAuthEvents.current = false;
     }
 
-    // Insert profile
-    const { error: profileErr } = await supabase
+    // Update permissions + created_by that the trigger can't infer
+    const perms = ROLE_DEFAULTS[role] || ROLE_DEFAULTS.viewer;
+    await supabase
       .from('user_profiles')
-      .insert({
-        id: newUserId,
-        school_id: profile.school_id,
-        name,
-        role,
-        permissions: perms,
-        created_by: session.user.id,
-      });
-
-    if (profileErr) return { error: profileErr };
+      .update({ permissions: perms, created_by: session?.user?.id })
+      .eq('id', newUserId);
 
     return { data: { id: newUserId, email, name, role } };
   };
+
 
   // ── Admin: Update user profile ───────────────────────────────
   const updateUser = async (userId, updates) => {
@@ -198,24 +243,59 @@ export function AuthProvider({ children }) {
     return { data, error: err };
   };
 
-  // ── Admin: Send password reset email ─────────────────────────
+  // ── Admin: Send password reset email (debounced — 60s cooldown) ───────────
+  let _lastResetAt = 0;
   const resetPassword = async (email) => {
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email);
+    const now = Date.now();
+    if (now - _lastResetAt < 60_000) {
+      return { error: new Error('Please wait 60 seconds before sending another reset email.') };
+    }
+    _lastResetAt = now;
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/update-password',
+    });
     return { error: err };
   };
 
+  // ── Super Admin Platform Management ──────────────────────────
+  const listAllSchools = async () => {
+    const { data, error: err } = await supabase.from('schools').select('*').order('name');
+    return { data, error: err };
+  };
+
+  const createTenantSchool = async (schoolData) => {
+    const { data, error: err } = await supabase.from('schools').insert(schoolData).select().single();
+    return { data, error: err };
+  };
+
+  const updateSchool = async (schoolId, updates) => {
+    const { error: err } = await supabase.from('schools').update(updates).eq('id', schoolId);
+    return { error: err };
+  };
+
+  // List ALL users across ALL schools (super admin only)
+  const listAllUsers = async () => {
+    const { data, error: err } = await supabase
+      .from('user_profiles')
+      .select('*, schools(code, name)')
+      .order('created_at', { ascending: false });
+    return { data, error: err };
+  };
+
   // ── Helpers ──────────────────────────────────────────────────
-  const isAdmin     = profile?.role === 'admin';
+  const isSuperAdmin= profile?.role === 'super_admin';
+  const isAdmin     = profile?.role === 'admin' || isSuperAdmin;
   const isTeacher   = profile?.role === 'teacher';
   const isViewer    = profile?.role === 'viewer';
   const isLoggedIn  = !!session && !!profile;
-  const can = (perm) => profile?.permissions?.[perm] === true || profile?.role === 'admin';
+  const can = (perm) => isSuperAdmin || profile?.permissions?.[perm] === true || profile?.role === 'admin';
 
   const value = {
     session, profile, school, loading, error,
-    isAdmin, isTeacher, isViewer, isLoggedIn, can,
+    isSuperAdmin, isAdmin, isTeacher, isViewer, isLoggedIn, can,
     signIn, signOut,
     createUser, updateUser, deleteUser, listUsers, resetPassword,
+    listAllSchools, createTenantSchool, updateSchool, listAllUsers,
     ROLE_DEFAULTS,
   };
 

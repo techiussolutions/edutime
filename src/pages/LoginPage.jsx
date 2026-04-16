@@ -12,12 +12,34 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const { error: err } = await signIn(form.email.trim(), form.password);
+    try {
+      // Step 1: Pre-warm Supabase (wakes DB if cold, fast if already warm)
+      setError('⏳ Connecting to server…');
+      try {
+        await fetch('/api/ping', { signal: AbortSignal.timeout(20000) });
+      } catch {
+        // Ping failed or timed out — try login anyway
+      }
+      setError('');
 
-    if (err) {
-      setError(err.message || 'Invalid email or password.');
+      // Step 2: Attempt login against now-warm DB
+      const { error: err } = await signIn(form.email.trim(), form.password);
+      if (err) {
+        // Supabase returns this when the project is paused / DB is unreachable
+        if (err.message?.toLowerCase().includes('auth status') ||
+            err.message?.toLowerCase().includes('network') ||
+            err.message?.toLowerCase().includes('fetch')) {
+          setError('⚠️ Server is unavailable. It may be starting up — wait 30 seconds and try again.');
+        } else {
+          setError(err.message || 'Invalid email or password.');
+        }
+      }
+
+    } catch (err) {
+      setError('Connection failed. Please check your internet and try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

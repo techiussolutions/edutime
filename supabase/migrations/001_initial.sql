@@ -92,31 +92,6 @@ create policy "self_update_last_login"
   using (id = auth.uid());
 
 -- ============================================================
--- SEED: Default demo school
--- ============================================================
-insert into public.schools(id, code, name, board, academic_year, address, logo)
-values (
-  'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-  'SPS2026',
-  'St. Paul''s School',
-  'CBSE',
-  '2025-2026',
-  '123 School Road, New Delhi',
-  '🎓'
-) on conflict (code) do nothing;
-
--- ============================================================
--- AFTER running this migration:
--- 1. Go to Supabase Dashboard → Authentication → Users → Add user
---    Email: admin@sps2026.edu   Password: admin123   (check "Auto confirm")
--- 2. Copy the UUID of the new user, then run:
---
---    INSERT INTO public.user_profiles(id, school_id, name, role, permissions)
---    VALUES (
---      '<paste-user-uuid-here>',
---      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
---      'School Admin',
---      'admin',
---      '{"viewTimetable":true,"editTimetable":true,"manageSubstitutions":true,"manageMasterData":true,"manageSettings":true,"manageUsers":true}'::jsonb
---    );
+-- No seed data — schools and users are created via the platform admin UI.
+-- Super Admin account must be bootstrapped via 002_super_admin.sql
 -- ============================================================

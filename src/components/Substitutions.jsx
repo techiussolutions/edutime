@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useStore } from '../context/StoreContext';
+import { useApp as useStore } from '../store/AppStore';
 import { Check, X, AlertTriangle, Settings, UserPlus } from 'lucide-react';
 import { suggestSubstitutes } from '../utils/substitutionLogic';
 
