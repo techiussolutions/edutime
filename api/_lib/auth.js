@@ -1,9 +1,30 @@
-import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { jwtVerify, SignJWT } from 'jose';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+const JWT_ISSUER = 'edutime';
+const JWT_EXPIRY = '7d'; // 7 day token lifetime
 
-// Verify the Supabase JWT and return the payload
+function getSecretKey() {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET env var is not set');
+  return new TextEncoder().encode(JWT_SECRET);
+}
+
+// Sign a new JWT for a user
+export async function signJWT(user) {
+  return new SignJWT({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    school_id: user.school_id,
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(JWT_ISSUER)
+    .setIssuedAt()
+    .setExpirationTime(JWT_EXPIRY)
+    .sign(getSecretKey());
+}
+
+// Verify the JWT and return the payload
 export async function verifyAuth(req) {
   const authHeader = req.headers['authorization'] || req.headers['Authorization'];
   if (!authHeader?.startsWith('Bearer ')) {
@@ -11,14 +32,13 @@ export async function verifyAuth(req) {
   }
   const token = authHeader.slice(7);
   try {
-    const secret = new TextEncoder().encode(JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret, {
-      issuer: SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : undefined,
+    const { payload } = await jwtVerify(token, getSecretKey(), {
+      issuer: JWT_ISSUER,
     });
     return {
       userId: payload.sub,
-      role: payload.user_metadata?.role || payload.app_metadata?.role || null,
-      schoolId: payload.user_metadata?.school_id || payload.app_metadata?.school_id || null,
+      role: payload.role || null,
+      schoolId: payload.school_id || null,
       email: payload.email,
     };
   } catch (err) {

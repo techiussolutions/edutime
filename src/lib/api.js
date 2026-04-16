@@ -1,17 +1,24 @@
 // Client-side API wrapper for Neon backend
-// All DB operations go through Vercel serverless functions
+// All DB + auth operations go through Vercel serverless functions
 
 const API_BASE = '/api';
+const TOKEN_KEY = 'edu_token';
 
-async function getToken() {
-  // Get the current Supabase session token
-  const { supabase } = await import('./supabase');
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token || null;
+// ── Token management ───────────────────────────────────────
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+export function setToken(token) {
+  try { if (token) localStorage.setItem(TOKEN_KEY, token); else localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+
+export function clearToken() {
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 
 async function request(path, options = {}) {
-  const token = await getToken();
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -27,6 +34,35 @@ async function request(path, options = {}) {
   }
 
   return res.json();
+}
+
+// ── Auth ───────────────────────────────────────────────────
+export async function authSignIn(email, password) {
+  const result = await request('/auth?action=signin', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  if (result.token) setToken(result.token);
+  return result;
+}
+
+export async function authSignUp({ email, password, name, role, schoolId, permissions, createdBy }) {
+  const result = await request('/auth?action=signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, name, role, schoolId, permissions, createdBy }),
+  });
+  // Don't set token for admin-created users — keep admin's token
+  return result;
+}
+
+export async function authMe() {
+  const result = await request('/auth?action=me');
+  if (result.token) setToken(result.token); // refresh token
+  return result;
+}
+
+export function authSignOut() {
+  clearToken();
 }
 
 // ── Profile ────────────────────────────────────────────────

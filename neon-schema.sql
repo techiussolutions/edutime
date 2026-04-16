@@ -16,14 +16,16 @@ CREATE TABLE IF NOT EXISTS schools (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- 2. USER PROFILES (linked to Supabase Auth user IDs)
+-- 2. USER PROFILES (self-contained auth — no external auth provider)
 CREATE TABLE IF NOT EXISTS user_profiles (
-  id          uuid PRIMARY KEY,       -- matches Supabase auth.users.id
-  school_id   uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-  name        text NOT NULL,
-  role        text NOT NULL DEFAULT 'teacher' CHECK (role IN ('super_admin','admin','teacher','viewer')),
-  active      boolean NOT NULL DEFAULT true,
-  permissions jsonb NOT NULL DEFAULT '{
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         text UNIQUE,
+  password_hash text,
+  school_id     uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  name          text NOT NULL,
+  role          text NOT NULL DEFAULT 'teacher' CHECK (role IN ('super_admin','admin','teacher','viewer')),
+  active        boolean NOT NULL DEFAULT true,
+  permissions   jsonb NOT NULL DEFAULT '{
     "viewTimetable": true,
     "editTimetable": false,
     "manageSubstitutions": false,

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
 import * as api from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -13,14 +12,11 @@ const ROLE_DEFAULTS = {
 };
 
 export function AuthProvider({ children }) {
-  const [session, setSession]   = useState(null);
+  const [session, setSession]   = useState(null);   // { user: { id, email } } or null
   const [profile, setProfile]   = useState(null);   // user_profiles row
   const [school, setSchool]     = useState(null);    // schools row
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
-
-  // Flag to suppress auth listener during user creation (prevents redirect on signUp)
-  const suppressAuthEvents = React.useRef(false);
 
   // ── Profile cache helpers (sessionStorage = clears on tab close) ──────────
   const CACHE_KEY = 'edu_profile_cache';
@@ -32,16 +28,14 @@ export function AuthProvider({ children }) {
       const raw = sessionStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       const { prof, sch, ts } = JSON.parse(raw);
-      // Discard cache older than 5 minutes
       if (Date.now() - ts > 5 * 60 * 1000) { sessionStorage.removeItem(CACHE_KEY); return null; }
       return { prof, sch };
     } catch { return null; }
   };
   const clearCache = () => { try { sessionStorage.removeItem(CACHE_KEY); } catch {} };
 
-  // ── Fetch profile + school — single joined query ──────────────
+  // ── Fetch profile + school ────────────────────────────────────
   const fetchProfile = useCallback(async (userId) => {
-    // 1. Paint instantly from cache while real fetch runs in background
     const cached = loadCache();
     if (cached?.prof?.id === userId) {
       setProfile(cached.prof);
@@ -58,147 +52,88 @@ export function AuthProvider({ children }) {
       setSchool(sch ?? null);
       setError(null);
       saveCache(prof, sch ?? null);
-
     } catch (err) {
       console.error('[AuthContext] fetchProfile fatal:', err.message);
       setError(err.message);
       setProfile(null);
       setSchool(null);
       clearCache();
-      await supabase.auth.signOut();
+      api.authSignOut();
+      setSession(null);
     }
   }, []);
 
-
-  // ── Listen for auth state changes ────────────────────────────
+  // ── Restore session on mount ─────────────────────────────────
   useEffect(() => {
-    // Safety net: if loading is still true after 3s, force it off
-    const loadingTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 3000);
+    const loadingTimeout = setTimeout(() => setLoading(false), 3000);
 
-    // Get initial session on mount
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (s?.user) {
-        fetchProfile(s.user.id).finally(() => {
-          clearTimeout(loadingTimeout);
-          setLoading(false);
-        });
-      } else {
-        clearTimeout(loadingTimeout);
-        setLoading(false);
-      }
+    const token = api.getToken();
+    if (!token) {
+      clearTimeout(loadingTimeout);
+      setLoading(false);
+      return;
+    }
+
+    api.authMe().then(({ user }) => {
+      setSession({ user: { id: user.id, email: user.email } });
+      return fetchProfile(user.id);
     }).catch(() => {
+      api.authSignOut();
+      setSession(null);
+    }).finally(() => {
       clearTimeout(loadingTimeout);
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, s) => {
-        // Skip INITIAL_SESSION — already handled by getSession() above
-        if (event === 'INITIAL_SESSION') return;
-        // Skip events fired during user creation (signUp swaps the session temporarily)
-        if (suppressAuthEvents.current) return;
-
-        setSession(s);
-        if (s?.user) {
-          // Skip if profile is already loaded (signIn handles it directly)
-          if (!profile || profile.id !== s.user.id) {
-            await fetchProfile(s.user.id);
-          }
-        } else {
-          setProfile(null);
-          setSchool(null);
-        }
-      }
-    );
-
-    return () => {
-      clearTimeout(loadingTimeout);
-      subscription.unsubscribe();
-    };
+    return () => clearTimeout(loadingTimeout);
   }, [fetchProfile]);
 
   // ── Sign in ─────────────────────────────────────────────────
   const signIn = async (email, password) => {
     setError(null);
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (authErr) {
-      setError(authErr.message);
-      return { error: authErr };
-    }
-    // Set session + fetch profile immediately — don't rely on async onAuthStateChange
-    setSession(data.session);
     try {
-      await fetchProfile(data.user.id);
+      const { user } = await api.authSignIn(email, password);
+      setSession({ user: { id: user.id, email: user.email } });
+      await fetchProfile(user.id);
+      return { data: { user } };
     } catch (err) {
-      // fetchProfile already handles errors internally (sets error, signs out)
-      return { error: { message: err.message || 'Failed to load profile' } };
+      setError(err.message);
+      return { error: { message: err.message } };
     }
-    // Fire last_login update in background — don’t await it during login.
-    api.updateProfile(data.user.id, { last_login: new Date().toISOString() }).catch(() => {});
-    return { data };
   };
 
   // ── Sign out ─────────────────────────────────────────────────
   const signOut = async () => {
     clearCache();
+    api.authSignOut();
     setProfile(null);
     setSchool(null);
     setSession(null);
     setError(null);
-    await supabase.auth.signOut();
   };
 
   // ── Admin: Create user ───────────────────────────────────────
   const createUser = async ({ email, password, name, role, schoolId }) => {
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-
     const targetSchoolId = profile?.role === 'super_admin'
       ? (schoolId || null)
       : profile?.school_id;
 
-    suppressAuthEvents.current = true;
-    let newUserId = null;
     try {
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+      const perms = ROLE_DEFAULTS[role] || ROLE_DEFAULTS.viewer;
+      const { user } = await api.authSignUp({
         email,
         password,
-        options: {
-          data: { name, role, school_id: targetSchoolId || '' },
-          emailRedirectTo: null,
-        },
+        name,
+        role,
+        schoolId: targetSchoolId,
+        permissions: perms,
+        createdBy: profile?.id,
       });
 
-      if (signUpErr) return { error: signUpErr };
-
-      newUserId = signUpData.user?.id;
-      if (!newUserId) {
-        return { error: new Error('Failed to create user — this email may already be registered.') };
-      }
-    } finally {
-      if (currentSession) {
-        await supabase.auth.setSession({
-          access_token:  currentSession.access_token,
-          refresh_token: currentSession.refresh_token,
-        });
-      }
-      suppressAuthEvents.current = false;
+      return { data: { id: user.id, email: user.email, name: user.name, role: user.role } };
+    } catch (err) {
+      return { error: err };
     }
-
-    // Create profile in Neon via API
-    const perms = ROLE_DEFAULTS[role] || ROLE_DEFAULTS.viewer;
-    await api.createUserProfile({
-      id: newUserId,
-      schoolId: targetSchoolId,
-      name,
-      role,
-      permissions: perms,
-      createdBy: session?.user?.id,
-    });
-
-    return { data: { id: newUserId, email, name, role } };
   };
 
   // ── Admin: Update user profile ───────────────────────────────
@@ -231,18 +166,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ── Admin: Send password reset email ─────────────────────────
-  let _lastResetAt = 0;
-  const resetPassword = async (email) => {
-    const now = Date.now();
-    if (now - _lastResetAt < 60_000) {
-      return { error: new Error('Please wait 60 seconds before sending another reset email.') };
-    }
-    _lastResetAt = now;
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/update-password',
-    });
-    return { error: err };
+  // ── Reset password (not available without email provider) ────
+  const resetPassword = async () => {
+    return { error: new Error('Password reset is not available. Contact your administrator.') };
   };
 
   // ── Super Admin Platform Management ──────────────────────────
@@ -273,7 +199,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // List ALL users across ALL schools (super admin only)
   const listAllUsers = async (page = 0, pageSize = 50) => {
     try {
       const { data, count } = await api.listAllUsers(page, pageSize);

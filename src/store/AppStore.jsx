@@ -132,7 +132,7 @@ function reducer(state, action) {
   let next;
   switch (action.type) {
 
-    // Hydrate from Supabase — replaces all operational data, keeps school info
+    // Hydrate from Neon — replaces all operational data, keeps school info
     case 'HYDRATE':
       next = { ...state, ...action.payload };
       break;
