@@ -6,7 +6,9 @@ import { suggestSubstitutes } from '../utils/substitutionLogic';
 export default function Substitutions() {
   const { state, dispatch } = useStore();
   const todayDate = new Date().toISOString().split('T')[0];
-  const todayDayOfWeek = 0; // Hardcoding to Monday for mock purposes
+  const DAY_KEYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const DAY_KEY_TO_IDX = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5 };
+  const todayDayOfWeek = DAY_KEY_TO_IDX[DAY_KEYS[new Date().getDay()]] ?? 0;
 
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [absenceReason, setAbsenceReason] = useState('');

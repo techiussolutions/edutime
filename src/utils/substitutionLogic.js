@@ -25,7 +25,8 @@ export const suggestSubstitutes = (state, day, period, absentTeacherId, classId)
   // Just a simple heuristic.
   const getDailyLoad = (tId) => {
     const normalClasses = schedule.filter(s => s.day === day && s.teacherId === tId).length;
-    const subsClasses = substitutions.filter(s => s.date === Date.now().toString().split('T')[0] && s.substituteTeacherId === tId).length; // Rough mock using today
+    const todayStr = new Date().toISOString().split('T')[0];
+    const subsClasses = substitutions.filter(s => s.date === todayStr && s.substituteTeacherId === tId).length;
     return normalClasses + subsClasses;
   };
 

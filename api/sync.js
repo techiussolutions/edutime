@@ -188,15 +188,15 @@ export default async function handler(req, res) {
       case 'SYNC_SETTINGS': {
         const s = payload;
         await db`
-          INSERT INTO school_settings (school_id, working_days, periods_per_day, period_timings, break_periods, max_default_periods, substitution_priority, assembly_day, assembly_period, periods_config, class_period_settings, locked_slots, updated_at)
-          VALUES (${schoolId}, ${JSON.stringify(s.working_days)}::jsonb, ${s.periods_per_day}, ${JSON.stringify(s.period_timings)}::jsonb, ${s.break_periods}, ${s.max_default_periods}, ${s.substitution_priority}, ${s.assembly_day}, ${s.assembly_period}, ${JSON.stringify(s.periods_config)}::jsonb, ${JSON.stringify(s.class_period_settings)}::jsonb, ${s.locked_slots}, ${new Date().toISOString()})
+          INSERT INTO school_settings (school_id, working_days, periods_per_day, period_timings, break_periods, max_default_periods, substitution_priority, assembly_day, assembly_period, periods_config, class_period_settings, locked_slots, setup_skipped, updated_at)
+          VALUES (${schoolId}, ${JSON.stringify(s.working_days)}::jsonb, ${s.periods_per_day}, ${JSON.stringify(s.period_timings)}::jsonb, ${s.break_periods}, ${s.max_default_periods}, ${s.substitution_priority}, ${s.assembly_day}, ${s.assembly_period}, ${JSON.stringify(s.periods_config)}::jsonb, ${JSON.stringify(s.class_period_settings)}::jsonb, ${s.locked_slots}, ${s.setup_skipped || false}, ${new Date().toISOString()})
           ON CONFLICT (school_id) DO UPDATE SET
             working_days = EXCLUDED.working_days, periods_per_day = EXCLUDED.periods_per_day,
             period_timings = EXCLUDED.period_timings, break_periods = EXCLUDED.break_periods,
             max_default_periods = EXCLUDED.max_default_periods, substitution_priority = EXCLUDED.substitution_priority,
             assembly_day = EXCLUDED.assembly_day, assembly_period = EXCLUDED.assembly_period,
             periods_config = EXCLUDED.periods_config, class_period_settings = EXCLUDED.class_period_settings,
-            locked_slots = EXCLUDED.locked_slots, updated_at = EXCLUDED.updated_at
+            locked_slots = EXCLUDED.locked_slots, setup_skipped = EXCLUDED.setup_skipped, updated_at = EXCLUDED.updated_at
         `;
         break;
       }
@@ -206,8 +206,8 @@ export default async function handler(req, res) {
         const { settings, teachers, classes, subjects, assignments } = payload;
         if (settings) {
           await db`
-            INSERT INTO school_settings (school_id, working_days, periods_per_day, period_timings, break_periods, max_default_periods, substitution_priority, assembly_day, assembly_period, periods_config, class_period_settings, locked_slots, updated_at)
-            VALUES (${schoolId}, ${JSON.stringify(settings.working_days)}::jsonb, ${settings.periods_per_day}, ${JSON.stringify(settings.period_timings)}::jsonb, ${settings.break_periods}, ${settings.max_default_periods}, ${settings.substitution_priority}, ${settings.assembly_day}, ${settings.assembly_period}, ${JSON.stringify(settings.periods_config || {})}::jsonb, ${JSON.stringify(settings.class_period_settings || {})}::jsonb, ${settings.locked_slots || []}, ${new Date().toISOString()})
+            INSERT INTO school_settings (school_id, working_days, periods_per_day, period_timings, break_periods, max_default_periods, substitution_priority, assembly_day, assembly_period, periods_config, class_period_settings, locked_slots, setup_skipped, updated_at)
+            VALUES (${schoolId}, ${JSON.stringify(settings.working_days)}::jsonb, ${settings.periods_per_day}, ${JSON.stringify(settings.period_timings)}::jsonb, ${settings.break_periods}, ${settings.max_default_periods}, ${settings.substitution_priority}, ${settings.assembly_day}, ${settings.assembly_period}, ${JSON.stringify(settings.periods_config || {})}::jsonb, ${JSON.stringify(settings.class_period_settings || {})}::jsonb, ${settings.locked_slots || []}, ${settings.setup_skipped || false}, ${new Date().toISOString()})
             ON CONFLICT (school_id) DO NOTHING
           `;
         }

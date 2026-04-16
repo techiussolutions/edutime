@@ -15,7 +15,7 @@ const mapAbsenceFromDb = (r)  => ({ id: r.id, teacherId: r.teacher_id, date: r.d
 const mapSubFromDb    = (r)   => ({ id: r.id, date: r.date, day: r.day, period: r.period, scheduleId: r.schedule_id, absentTeacherId: r.absent_teacher_id, substituteTeacherId: r.substitute_teacher_id, assignedBy: r.assigned_by });
 
 const mapSettingsFromDb = (r) => ({
-  settings: { workingDays: r.working_days, periodsPerDay: r.periods_per_day, periodTimings: r.period_timings, breakPeriods: r.break_periods, maxDefaultPeriods: r.max_default_periods, substitutionPriority: r.substitution_priority, assemblyDay: r.assembly_day, assemblyPeriod: r.assembly_period },
+  settings: { workingDays: r.working_days, periodsPerDay: r.periods_per_day, periodTimings: r.period_timings, breakPeriods: r.break_periods, maxDefaultPeriods: r.max_default_periods, substitutionPriority: r.substitution_priority, assemblyDay: r.assembly_day, assemblyPeriod: r.assembly_period, setupSkipped: r.setup_skipped || false },
   periodsConfig: r.periods_config || {},
   classPeriodSettings: r.class_period_settings || {},
   lockedSlots: r.locked_slots || [],
@@ -30,6 +30,7 @@ const mapSettingsToDb = (settings, periodsConfig, classPeriodSettings, lockedSlo
   substitution_priority: settings.substitutionPriority,
   assembly_day: settings.assemblyDay,
   assembly_period: settings.assemblyPeriod,
+  setup_skipped: settings.setupSkipped || false,
   periods_config: periodsConfig || {},
   class_period_settings: classPeriodSettings || {},
   locked_slots: lockedSlots || [],
@@ -108,16 +109,7 @@ const DEFAULT_STATE = {
   teacherAvailability: {},
 };
 
-const buildInitial = () => {
-  const saved = localStorage.getItem('edutime_state');
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      return { ...DEFAULT_STATE, ...parsed };
-    } catch {}
-  }
-  return DEFAULT_STATE;
-};
+const buildInitial = () => DEFAULT_STATE;
 
 // ── REDUCER ─────────────────────────────────────────────────
 function reducer(state, action) {
@@ -329,8 +321,6 @@ function reducer(state, action) {
     default:
       return state;
   }
-  // Persist to localStorage
-  localStorage.setItem('edutime_state', JSON.stringify(next));
   return next;
 }
 
@@ -359,7 +349,6 @@ export function AppProvider({ children }) {
         }
         if (data) {
           dispatch({ type: 'HYDRATE', payload: data });
-          localStorage.setItem('edutime_state', JSON.stringify({ ...state, ...data }));
         }
       } catch (err) {
         console.error('[AppStore] Failed to load school data:', err);

@@ -30,7 +30,12 @@ function shuffle(arr) {
 
 export function generateTimetable(state, requirements) {
   const { teachers, classes, subjects, settings, classAssignments = [], classPeriodSettings = {}, teacherAvailability = {} } = state;
-  const { classSubjectMap } = requirements;
+  const { classSubjectMap, selectedClassIds } = requirements;
+
+  // If selectedClassIds provided, only generate for those classes
+  const targetClasses = selectedClassIds
+    ? classes.filter(c => selectedClassIds.includes(c.id))
+    : classes;
 
   const activeDayKeys = Object.entries(settings.workingDays)
     .filter(([, v]) => v).map(([k]) => k);
@@ -55,7 +60,7 @@ export function generateTimetable(state, requirements) {
   // ── Step 1: Build demand list ─────────────────────────────────────────────
   // Each demand = { classId, subjectId, teacherId, remaining }
   const demands = [];
-  classes.forEach(cls => {
+  targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
       const teacherId = assignmentMap[`${cls.id}__${req.subjectId}`];
@@ -66,7 +71,7 @@ export function generateTimetable(state, requirements) {
 
   // Track unassigned subjects (will warn at the end)
   const unassigned = [];
-  classes.forEach(cls => {
+  targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
       if (!assignmentMap[`${cls.id}__${req.subjectId}`]) {
         const sub = subjects.find(s => s.id === req.subjectId);
@@ -83,6 +88,21 @@ export function generateTimetable(state, requirements) {
   // Weekly load
   const teacherLoad = {};
   teachers.forEach(t => { teacherLoad[t.id] = 0; });
+
+  // If generating for selected classes only, pre-fill busy maps from existing schedule
+  // for non-selected classes so we don't double-book teachers
+  if (selectedClassIds) {
+    const existingSchedule = state.schedule || [];
+    existingSchedule.forEach(slot => {
+      if (!selectedClassIds.includes(slot.classId)) {
+        teacherBusy.add(`${slot.teacherId}_${slot.day}_${slot.period}`);
+        classBusy.add(`${slot.classId}_${slot.day}_${slot.period}`);
+        if (teacherLoad[slot.teacherId] !== undefined) {
+          teacherLoad[slot.teacherId]++;
+        }
+      }
+    });
+  }
 
   const schedule = [];
   const warnings = [];

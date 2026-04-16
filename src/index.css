@@ -604,7 +604,20 @@ tbody tr:hover { background: var(--bg-muted); }
 .break-config-row {
   display: flex; align-items: end; gap: .75rem; flex-wrap: wrap;
   padding: .75rem 1rem; border-radius: var(--r-lg);
-  background: var(--clr-amber-l); border: 1px solid #fcd34d;
+  background: var(--clr-amber-l); border: 2px solid #f59e0b;
+  box-shadow: 0 2px 8px #f59e0b22;
+}
+.break-config-row-enhanced {
+  border: 2.5px solid #f59e0b !important;
+  background: #fffbe6 !important;
+  box-shadow: 0 2px 12px #f59e0b33 !important;
+}
+.break-badge-strong {
+  border: 2px solid #f59e0b !important;
+  background: #fffbe6 !important;
+  color: #b45309 !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px;
 }
 .setup-workload-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; max-width: 600px;
@@ -692,19 +705,67 @@ tbody tr:hover { background: var(--bg-muted); }
   .wizard-layout {
     flex-direction: column;
     height: auto;
-    overflow-y: visible;
+    min-height: 0;
+    overflow-y: auto;
   }
   .wizard-sidebar {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    padding: 1rem;
+    padding: .75rem 1rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+  }
+  /* Hide back btn, title block, and lock info on mobile — keep only step dots */
+  .wizard-sidebar .wizard-back-btn,
+  .wizard-sidebar .wizard-title,
+  .wizard-sidebar .wizard-lock-info {
+    display: none;
+  }
+  /* Step dots: horizontal row on mobile */
+  .wizard-sidebar .wizard-steps {
+    flex-direction: row !important;
+    gap: .25rem;
+    width: 100%;
+    justify-content: center;
+  }
+  /* Hide step label+desc text on mobile, keep only the circle icon */
+  .wizard-sidebar .wizard-step-text {
+    display: none;
   }
   .wizard-main {
     padding: 1rem;
     overflow-y: visible;
+    min-height: 0;
+  }
+  .wizard-main .page-header {
+    gap: .75rem;
+  }
+  .wizard-main .page-header .btn {
+    width: auto;
+    font-size: .8rem;
+    padding: .5rem .75rem;
   }
   .wizard-sidebar .btn {
     width: auto;
+  }
+  /* Timetable tables scroll horizontally */
+  .wizard-main .tt-table,
+  .wizard-main table {
+    font-size: .72rem;
+  }
+  .wizard-main .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .wizard-main .tabs {
+    flex-wrap: wrap;
+    gap: .25rem;
+  }
+  .wizard-main .tab-btn {
+    font-size: .78rem;
+    padding: .4rem .6rem;
   }
 }

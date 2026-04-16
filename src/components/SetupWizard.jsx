@@ -36,7 +36,7 @@ export function isSetupComplete(state) {
   const daysOk = settings?.workingDays && Object.values(settings.workingDays).some(v => v);
   const periodsOk = settings?.periodTimings && settings.periodTimings.length >= 4
     && settings.periodTimings.some(p => !p.isBreak);
-  const userSkipped = localStorage.getItem('edu_setup_skipped') === 'true';
+  const userSkipped = !!state?.settings?.setupSkipped;
   return userSkipped || (schoolOk && daysOk && periodsOk);
 }
 
@@ -157,7 +157,7 @@ export default function SetupWizard({ onComplete }) {
           substitutionPriority: subRules,
         },
       });
-      localStorage.removeItem('edu_setup_skipped');
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { setupSkipped: false } });
       onComplete();
     } finally {
       setSaving(false);
@@ -175,7 +175,7 @@ export default function SetupWizard({ onComplete }) {
   const prev = () => { if (step > 0) setStep(step - 1); };
 
   const handleSkip = () => {
-    localStorage.setItem('edu_setup_skipped', 'true');
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { setupSkipped: true } });
     onComplete();
   };
 
@@ -344,9 +344,11 @@ export default function SetupWizard({ onComplete }) {
                   <h4 style={{ marginBottom: '1rem', fontSize: '.9rem' }}>☕ Break Configuration</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
                     {breaks.map((brk, i) => (
-                      <div key={i} className="break-config-row">
+                      <div key={i} className="break-config-row break-config-row-enhanced">
                         <div style={{ fontWeight: 700, color: 'var(--clr-amber)', fontSize: '.85rem', paddingBottom: '.35rem' }}>
-                          Break {i + 1}
+                          <span style={{display:'inline-flex',alignItems:'center',gap:'.3rem'}}>
+                            <span style={{fontSize:'1.1rem'}}>☕</span> Break {i + 1}
+                          </span>
                         </div>
                         <div className="field" style={{ margin: 0, flex: '1 1 80px', minWidth: 80 }}>
                           <label style={{ fontSize: '.75rem' }}>Label</label>
@@ -365,7 +367,7 @@ export default function SetupWizard({ onComplete }) {
                               const arr = [...breaks];
                               arr[i] = { ...arr[i], afterPeriod: Math.max(1, Math.min(numPeriods, Number(e.target.value))) };
                               setBreaks(arr);
-                            }} />
+                            }} style={{borderColor:'var(--clr-amber)',borderWidth:'2px'}} />
                         </div>
                         <div className="field" style={{ margin: 0, flex: '0 0 85px' }}>
                           <label style={{ fontSize: '.75rem' }}>Duration (min)</label>
@@ -375,7 +377,14 @@ export default function SetupWizard({ onComplete }) {
                               const arr = [...breaks];
                               arr[i] = { ...arr[i], duration: Math.max(1, Number(e.target.value) || 1) };
                               setBreaks(arr);
-                            }} />
+                            }} style={{borderColor:'var(--clr-amber)',borderWidth:'2px'}} />
+                        </div>
+                        <div className="field" style={{ margin: 0, flex: '0 0 110px', alignItems: 'center' }}>
+                          <label style={{ fontSize: '.75rem' }}>Is Break?</label>
+                          <label className="toggle-wrap" style={{marginTop: '.2rem'}}>
+                            <input type="checkbox" checked={true} disabled style={{accentColor: 'var(--clr-amber)'}} />
+                            <span style={{color: 'var(--clr-amber)', fontWeight: 600, fontSize: '.9rem'}}>Break</span>
+                          </label>
                         </div>
                       </div>
                     ))}

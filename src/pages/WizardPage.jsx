@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { useNavigate } from 'react-router-dom';
 import { generateTimetable, getDefaultRequirements, analyzeStaffing } from '../utils/generator';
@@ -18,7 +18,7 @@ const STEPS = [
 const DAY_IDX = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5 };
 
 export default function WizardPage() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, dbLoaded } = useApp();
   const navigate = useNavigate();
 
   const { settings, teachers, subjects, classes, schedule, lockedSlots, classAssignments = [], periodsConfig = {}, classPeriodSettings = {} } = state;
@@ -44,6 +44,24 @@ export default function WizardPage() {
   const [generated, setGenerated] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [genMode, setGenMode] = useState('all'); // 'all' or 'selected'
+  const [selectedClassIds, setSelectedClassIds] = useState(() => classes.map(c => c.id));
+
+  // Recompute when DB data arrives (initial state is empty before HYDRATE)
+  useEffect(() => {
+    if (!dbLoaded || classes.length === 0) return;
+    // Update selectedClass/previewClass if not yet set
+    setSelectedClass(prev => prev || classes[0]?.id || '');
+    setPreviewClass(prev => prev || classes[0]?.id || '');
+    setSelectedClassIds(classes.map(c => c.id));
+    // Recompute classSubjectMap from periodsConfig or defaults
+    setClassSubjectMap(prev => {
+      if (periodsConfig && Object.keys(periodsConfig).length > 0) return periodsConfig;
+      // Only recompute if current map is empty (avoid overwriting user edits)
+      if (Object.keys(prev).length > 0) return prev;
+      return getDefaultRequirements(classes, subjects, activeDayCount, classAssignments);
+    });
+  }, [dbLoaded, classes.length, subjects.length, classAssignments.length]);
 
   // ── helpers ──────────────────────────────────────────
   const slotId = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
@@ -82,16 +100,24 @@ export default function WizardPage() {
     setGenerating(true);
     try {
       await new Promise(r => setTimeout(r, 500));
-      const result = generateTimetable(state, { classSubjectMap });
+      const opts = { classSubjectMap };
+      if (genMode === 'selected') opts.selectedClassIds = selectedClassIds;
+      const result = generateTimetable(state, opts);
       setGenerated(result);
-      setStep(prev => (prev < 3 ? 3 : prev)); // advance to step 3 only if not already there
+      setStep(prev => (prev < 3 ? 3 : prev));
     } finally {
       setGenerating(false);
     }
   };
 
   const handleApply = () => {
-    dispatch({ type: 'BULK_SET_SCHEDULE', payload: generated.schedule });
+    if (genMode === 'selected') {
+      // Merge: remove old slots for selected classes, keep others, add generated
+      const existingOther = schedule.filter(s => !selectedClassIds.includes(s.classId));
+      dispatch({ type: 'BULK_SET_SCHEDULE', payload: [...existingOther, ...generated.schedule] });
+    } else {
+      dispatch({ type: 'BULK_SET_SCHEDULE', payload: generated.schedule });
+    }
     setSaved(true);
     setTimeout(() => navigate('/timetable'), 1200);
   };
@@ -137,7 +163,7 @@ export default function WizardPage() {
         <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: done ? 'var(--clr-green)' : active ? 'var(--clr-primary)' : 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: done || active ? 'white' : 'var(--tx-muted)' }}>
           {done ? <Check size={14} /> : <s.icon size={14} />}
         </div>
-        <div>
+        <div className="wizard-step-text">
           <div style={{ fontWeight: active ? 700 : 500, fontSize: '.85rem', color: active ? 'var(--clr-primary)' : done ? 'var(--clr-green-dark, #15803d)' : 'var(--tx-muted)' }}>{s.label}</div>
           <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{s.desc}</div>
         </div>
@@ -150,11 +176,11 @@ export default function WizardPage() {
 
       {/* ── LEFT SIDEBAR ───────────────────────────────── */}
       <div className="wizard-sidebar">
-        <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', marginBottom: '1.5rem', gap: '.375rem', color: 'var(--tx-muted)' }} onClick={() => navigate('/timetable')}>
+        <button className="btn btn-ghost btn-sm wizard-back-btn" style={{ justifyContent: 'flex-start', marginBottom: '1.5rem', gap: '.375rem', color: 'var(--tx-muted)' }} onClick={() => navigate('/timetable')}>
           <ArrowLeft size={15} /> Back to Timetable
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '1.5rem' }}>
+        <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '1.5rem' }}>
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Wand2 size={16} color="white" />
           </div>
@@ -164,14 +190,14 @@ export default function WizardPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <div className="wizard-steps" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {STEPS.map(s => <StepDot key={s.id} s={s} />)}
         </div>
 
         <div style={{ flex: 1 }} />
 
         {/* Lock info */}
-        <div style={{ background: lockedSlots.length > 0 ? '#fef3c7' : 'var(--bg-muted)', border: `1px solid ${lockedSlots.length > 0 ? '#fcd34d' : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '.875rem', fontSize: '.78rem' }}>
+        <div className="wizard-lock-info" style={{ background: lockedSlots.length > 0 ? '#fef3c7' : 'var(--bg-muted)', border: `1px solid ${lockedSlots.length > 0 ? '#fcd34d' : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '.875rem', fontSize: '.78rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem', fontWeight: 600, marginBottom: '.375rem', color: lockedSlots.length > 0 ? '#92400e' : 'var(--tx-muted)' }}>
             <Lock size={13} /> {lockedSlots.length} slot{lockedSlots.length !== 1 ? 's' : ''} locked
           </div>
@@ -289,12 +315,47 @@ export default function WizardPage() {
           <div className="anim-fade-in">
             <div className="page-header" style={{ marginBottom: '1.25rem' }}>
               <div><h2>Validation Report</h2><p>Check your configuration before generating the timetable.</p></div>
-              <div style={{ display: 'flex', gap: '.75rem' }}>
+              <div style={{ display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
                 <button className="btn btn-ghost" onClick={() => setStep(1)}><ChevronLeft size={15} /> Back</button>
                 <button className="btn btn-primary" disabled={!canGenerate || generating} onClick={handleGenerate}>
                   {generating ? '⏳ Generating…' : <><Wand2 size={15} /> Generate Timetable</>}
                 </button>
               </div>
+            </div>
+
+            {/* Generation scope selector */}
+            <div className="card" style={{ marginBottom: '1rem', padding: '1rem 1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: genMode === 'selected' ? '.75rem' : 0 }}>
+                <span style={{ fontSize: '.85rem', fontWeight: 600 }}>Generate for:</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.84rem' }}>
+                  <input type="radio" name="genMode" checked={genMode === 'all'} onChange={() => { setGenMode('all'); setSelectedClassIds(classes.map(c => c.id)); }} />
+                  All Classes
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.84rem' }}>
+                  <input type="radio" name="genMode" checked={genMode === 'selected'} onChange={() => setGenMode('selected')} />
+                  Selected Classes Only
+                </label>
+              </div>
+              {genMode === 'selected' && (
+                <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                  {classes.map(cls => (
+                    <label key={cls.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer',
+                      padding: '.35rem .75rem', borderRadius: 'var(--r-lg)', fontSize: '.82rem',
+                      border: `1.5px solid ${selectedClassIds.includes(cls.id) ? 'var(--clr-primary)' : 'var(--border)'}`,
+                      background: selectedClassIds.includes(cls.id) ? 'var(--clr-primary-l)' : 'transparent',
+                    }}>
+                      <input type="checkbox" checked={selectedClassIds.includes(cls.id)}
+                        onChange={e => {
+                          setSelectedClassIds(prev =>
+                            e.target.checked ? [...prev, cls.id] : prev.filter(id => id !== cls.id)
+                          );
+                        }} />
+                      {cls.name}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             {lockedSlots.length > 0 && (
@@ -483,8 +544,9 @@ export default function WizardPage() {
                 <div style={{ fontSize: '3.5rem', marginBottom: '1.25rem' }}>🎉</div>
                 <h2 style={{ marginBottom: '.5rem' }}>Ready to Apply!</h2>
                 <p style={{ maxWidth: 420, margin: '0 auto 1.5rem', color: 'var(--tx-muted)', lineHeight: 1.6 }}>
-                  <strong>{generated?.schedule.length}</strong> slots generated across <strong>{classes.length}</strong> classes.
+                  <strong>{generated?.schedule.length}</strong> slots generated across <strong>{genMode === 'selected' ? selectedClassIds.length : classes.length}</strong> class{(genMode === 'selected' ? selectedClassIds.length : classes.length) !== 1 ? 'es' : ''}.
                   {lockedSlots.length > 0 && <> <strong>{lockedSlots.length}</strong> locked slot(s) will be preserved.</>}
+                  {genMode === 'selected' && <><br />Only selected classes will be updated. Other classes remain untouched.</>}
                   <br />Unlocked existing slots will be replaced.
                 </p>
                 <div className="alert alert-warning" style={{ maxWidth: 420, textAlign: 'left', marginBottom: '1.5rem' }}>

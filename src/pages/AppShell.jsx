@@ -15,9 +15,9 @@ const NAV = [
   { to: '/substitutions', label: 'Substitutions',  icon: UserCheck },
 ];
 const MASTER = [
+  { to: '/master/subjects',      label: 'Subjects',     icon: BookOpen },
   { to: '/master/teachers',      label: 'Teachers',     icon: Users },
   { to: '/master/classes',       label: 'Classes',      icon: GraduationCap },
-  { to: '/master/subjects',      label: 'Subjects',     icon: BookOpen },
   { to: '/master/availability',  label: 'Availability', icon: CalendarCheck },
 ];
 

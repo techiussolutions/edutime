@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   substitutionPriority: ['same_dept', 'same_subject', 'any_free'],
   assemblyDay: 'Mon',
   assemblyPeriod: 1,
+  setupSkipped: false,
 };
 
 

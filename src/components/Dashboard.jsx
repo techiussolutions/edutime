@@ -6,9 +6,7 @@ export default function Dashboard() {
   const { state } = useStore();
   const { teachers, classes, absences, substitutions } = state;
 
-  const todayDate = new Date().toISOString().split('T')[0]; // Simple mock for "today"
-  
-  // Actually our mock data doesn't use real dates yet, but let's assume absences have a date
+  const todayDate = new Date().toISOString().split('T')[0];
   const todaysAbsences = absences.filter(a => a.date === todayDate) || [];
   
   // The unassigned count is number of absences * periods - substitutions formed
