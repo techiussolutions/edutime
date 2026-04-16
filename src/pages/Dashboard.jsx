@@ -95,7 +95,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main content row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem', marginBottom: '1.5rem' }}>
+      <div className="dashboard-grid">
 
         {/* Workload Chart */}
         <div className="card">
@@ -162,50 +162,52 @@ export default function Dashboard() {
       </div>
 
       {/* Quick today schedule preview */}
-      <div className="card">
-        <div className="card-header">
-          <div><h3>Today's Schedule Snapshot</h3><p style={{ fontSize: '.8rem' }}>10th A · {new Date().toLocaleDateString('en-IN', { weekday: 'long' })}</p></div>
-          <button className="btn btn-sm btn-outline" onClick={() => navigate('/timetable')}>
-            Full Timetable <ArrowRight size={14} />
-          </button>
+      {state.classes.length > 0 && state.schedule.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <div><h3>Today's Schedule</h3><p style={{ fontSize: '.8rem' }}>{state.classes[0]?.name} · {new Date().toLocaleDateString('en-IN', { weekday: 'long' })}</p></div>
+            <button className="btn btn-sm btn-outline" onClick={() => navigate('/timetable')}>
+              Full Timetable <ArrowRight size={14} />
+            </button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {state.settings.periodTimings.map(p => (
+                    <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{p.start}</span></th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {state.settings.periodTimings.map(p => {
+                    if (p.isBreak) return <td key={p.period} style={{ textAlign: 'center', fontSize: '.8rem', color: 'var(--tx-muted)', background: 'var(--bg-muted)', fontStyle: 'italic' }}>Break</td>;
+                    const slot = state.schedule.find(s => s.classId === state.classes[0]?.id && s.day === Math.min(todayIdx, 4) && s.period === p.period);
+                    const teacher = slot ? state.teachers.find(t => t.id === slot.teacherId) : null;
+                    const subject = slot ? state.subjects.find(s => s.id === slot.subjectId) : null;
+                    const isAbsent = todaysAbsences.some(a => a.teacherId === slot?.teacherId);
+                    const sub = todaysSubs.find(s => s.scheduleId === slot?.id);
+                    return (
+                      <td key={p.period} style={{ textAlign: 'center', background: isAbsent && !sub ? '#fef2f2' : undefined }}>
+                        {slot ? (
+                          <>
+                            <div style={{ fontWeight: 600, fontSize: '.82rem', color: 'var(--clr-primary)' }}>{subject?.code}</div>
+                            <div style={{ fontSize: '.75rem', color: isAbsent && !sub ? 'var(--clr-red)' : 'var(--tx-muted)', textDecoration: isAbsent && !sub ? 'line-through' : undefined }}>
+                              {teacher?.name?.split(' ')[0]}
+                            </div>
+                            {sub && <div style={{ fontSize: '.7rem', color: 'var(--clr-green)', fontWeight: 600 }}>↳ {state.teachers.find(t => t.id === sub.substituteTeacherId)?.name?.split(' ')[0]}</div>}
+                          </>
+                        ) : <span style={{ color: 'var(--tx-xmuted)', fontSize: '.8rem' }}>—</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {state.settings.periodTimings.map(p => (
-                  <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{p.start}</span></th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {state.settings.periodTimings.map(p => {
-                  if (p.isBreak) return <td key={p.period} style={{ textAlign: 'center', fontSize: '.8rem', color: 'var(--tx-muted)', background: 'var(--bg-muted)', fontStyle: 'italic' }}>Break</td>;
-                  const slot = state.schedule.find(s => s.classId === 'c_10A' && s.day === Math.min(todayIdx, 4) && s.period === p.period);
-                  const teacher = slot ? state.teachers.find(t => t.id === slot.teacherId) : null;
-                  const subject = slot ? state.subjects.find(s => s.id === slot.subjectId) : null;
-                  const isAbsent = todaysAbsences.some(a => a.teacherId === slot?.teacherId);
-                  const sub = todaysSubs.find(s => s.scheduleId === slot?.id);
-                  return (
-                    <td key={p.period} style={{ textAlign: 'center', background: isAbsent && !sub ? '#fef2f2' : undefined }}>
-                      {slot ? (
-                        <>
-                          <div style={{ fontWeight: 600, fontSize: '.82rem', color: 'var(--clr-primary)' }}>{subject?.code}</div>
-                          <div style={{ fontSize: '.75rem', color: isAbsent && !sub ? 'var(--clr-red)' : 'var(--tx-muted)', textDecoration: isAbsent && !sub ? 'line-through' : undefined }}>
-                            {teacher?.name?.split(' ')[0]}
-                          </div>
-                          {sub && <div style={{ fontSize: '.7rem', color: 'var(--clr-green)', fontWeight: 600 }}>↳ {state.teachers.find(t => t.id === sub.substituteTeacherId)?.name?.split(' ')[0]}</div>}
-                        </>
-                      ) : <span style={{ color: 'var(--tx-xmuted)', fontSize: '.8rem' }}>—</span>}
-                    </td>
-                  );
-                })}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
