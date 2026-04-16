@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { School, Plus, Edit2, ToggleLeft, ToggleRight, CheckCircle2, XCircle, Zap, Info } from 'lucide-react';
 
@@ -379,7 +380,7 @@ export default function SchoolsManagementPage() {
       </div>
 
       {/* ── Add / Edit School Modal ── */}
-      {showModal && (
+      {showModal && createPortal(
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
           <div className="modal">
             <div className="modal-header">
@@ -473,7 +474,8 @@ export default function SchoolsManagementPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -414,12 +414,13 @@ tbody tr:hover { background: var(--bg-muted); }
   background: rgba(15,23,42,.55);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: flex-start;      /* don't center — lets modal start near top */
+  align-items: flex-start;
   justify-content: center;
-  z-index: 100;
+  z-index: 9999;
   animation: fadeIn .15s both;
   padding: 2rem 1rem;
-  overflow-y: auto;             /* scroll the overlay if modal is taller than viewport */
+  overflow-y: auto;
+  isolation: isolate;
 }
 .modal {
   background: var(--bg-card);
