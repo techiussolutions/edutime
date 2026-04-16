@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import * as api from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -48,33 +49,15 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      // 2. ONE query — joins school inline, no second round-trip
-      const { data: prof, error: profErr } = await supabase
-        .from('user_profiles')
-        .select('id, name, role, school_id, active, permissions, last_login, schools(id, code, name, board, academic_year, address, logo)')
-        .eq('id', userId)
-        .single();
-
-      if (profErr) {
-        if (profErr.code === 'PGRST116') {
-          throw new Error('No user profile found. Contact your administrator.');
-        }
-        // Other DB/RLS error — throw so callers (signIn) can surface it
-        console.error('[AuthContext] Profile fetch error:', profErr.message);
-        throw new Error(profErr.message || 'Failed to load user profile.');
-      }
+      const { profile: prof, school: sch } = await api.fetchProfile(userId);
 
       if (!prof) throw new Error('No user profile found.');
       if (!prof.active) throw new Error('Your account has been deactivated. Contact your administrator.');
 
-      // Separate the joined school from the profile object
-      const { schools: sch, ...profileData } = prof;
-      setProfile(profileData);
+      setProfile(prof);
       setSchool(sch ?? null);
       setError(null);
-
-      // 3. Update cache
-      saveCache(profileData, sch ?? null);
+      saveCache(prof, sch ?? null);
 
     } catch (err) {
       console.error('[AuthContext] fetchProfile fatal:', err.message);
@@ -154,16 +137,12 @@ export function AuthProvider({ children }) {
       return { error: { message: err.message || 'Failed to load profile' } };
     }
     // Fire last_login update in background — don’t await it during login.
-    supabase.from('user_profiles')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', data.user.id)
-      .then(() => {});
+    api.updateProfile(data.user.id, { last_login: new Date().toISOString() }).catch(() => {});
     return { data };
   };
 
   // ── Sign out ─────────────────────────────────────────────────
   const signOut = async () => {
-    // Clear cache + local state immediately so AuthGuard redirects right away
     clearCache();
     setProfile(null);
     setSchool(null);
@@ -173,21 +152,16 @@ export function AuthProvider({ children }) {
   };
 
   // ── Admin: Create user ───────────────────────────────────────
-  // The DB trigger `on_auth_user_created` (006_user_trigger.sql) creates
-  // the user_profiles row automatically using the metadata passed here.
   const createUser = async ({ email, password, name, role, schoolId }) => {
-    // Save admin session before signUp replaces it
     const { data: { session: currentSession } } = await supabase.auth.getSession();
 
     const targetSchoolId = profile?.role === 'super_admin'
       ? (schoolId || null)
       : profile?.school_id;
 
-    // Suppress auth listener so signUp's session swap doesn't redirect admin to /login
     suppressAuthEvents.current = true;
     let newUserId = null;
     try {
-      // Pass profile data as metadata — the DB trigger reads these fields
       const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
         email,
         password,
@@ -204,7 +178,6 @@ export function AuthProvider({ children }) {
         return { error: new Error('Failed to create user — this email may already be registered.') };
       }
     } finally {
-      // Always restore admin session and re-enable listener
       if (currentSession) {
         await supabase.auth.setSession({
           access_token:  currentSession.access_token,
@@ -214,46 +187,51 @@ export function AuthProvider({ children }) {
       suppressAuthEvents.current = false;
     }
 
-    // Update permissions + created_by that the trigger can't infer
+    // Create profile in Neon via API
     const perms = ROLE_DEFAULTS[role] || ROLE_DEFAULTS.viewer;
-    await supabase
-      .from('user_profiles')
-      .update({ permissions: perms, created_by: session?.user?.id })
-      .eq('id', newUserId);
+    await api.createUserProfile({
+      id: newUserId,
+      schoolId: targetSchoolId,
+      name,
+      role,
+      permissions: perms,
+      createdBy: session?.user?.id,
+    });
 
     return { data: { id: newUserId, email, name, role } };
   };
 
-
   // ── Admin: Update user profile ───────────────────────────────
   const updateUser = async (userId, updates) => {
-    const { error: err } = await supabase
-      .from('user_profiles')
-      .update(updates)
-      .eq('id', userId);
-    return { error: err };
+    try {
+      await api.updateProfile(userId, updates);
+      return { error: null };
+    } catch (err) {
+      return { error: err };
+    }
   };
 
   // ── Admin: Delete user profile ───────────────────────────────
   const deleteUser = async (userId) => {
-    const { error: err } = await supabase
-      .from('user_profiles')
-      .delete()
-      .eq('id', userId);
-    return { error: err };
+    try {
+      await api.deleteProfile(userId);
+      return { error: null };
+    } catch (err) {
+      return { error: err };
+    }
   };
 
   // ── Admin: List all users in the school ──────────────────────
   const listUsers = async () => {
-    const { data, error: err } = await supabase
-      .from('user_profiles')
-      .select('id, name, role, active, email:id, permissions, created_at, schools(code, name)')
-      .eq('school_id', profile?.school_id)
-      .order('created_at', { ascending: true });
-    return { data, error: err };
+    try {
+      const { data } = await api.listUsers(profile?.school_id);
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err };
+    }
   };
 
-  // ── Admin: Send password reset email (debounced — 60s cooldown) ───────────
+  // ── Admin: Send password reset email ─────────────────────────
   let _lastResetAt = 0;
   const resetPassword = async (email) => {
     const now = Date.now();
@@ -269,30 +247,40 @@ export function AuthProvider({ children }) {
 
   // ── Super Admin Platform Management ──────────────────────────
   const listAllSchools = async () => {
-    const { data, error: err } = await supabase.from('schools').select('*').order('name');
-    return { data, error: err };
+    try {
+      const { data } = await api.listSchools();
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err };
+    }
   };
 
   const createTenantSchool = async (schoolData) => {
-    const { data, error: err } = await supabase.from('schools').insert(schoolData).select().single();
-    return { data, error: err };
+    try {
+      const { data } = await api.createSchool(schoolData);
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err };
+    }
   };
 
   const updateSchool = async (schoolId, updates) => {
-    const { error: err } = await supabase.from('schools').update(updates).eq('id', schoolId);
-    return { error: err };
+    try {
+      await api.updateSchool(schoolId, updates);
+      return { error: null };
+    } catch (err) {
+      return { error: err };
+    }
   };
 
   // List ALL users across ALL schools (super admin only)
   const listAllUsers = async (page = 0, pageSize = 50) => {
-    const from = page * pageSize;
-    const to = from + pageSize - 1;
-    const { data, error: err, count } = await supabase
-      .from('user_profiles')
-      .select('id, name, role, active, school_id, permissions, created_at, schools(code, name)', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    return { data, error: err, count };
+    try {
+      const { data, count } = await api.listAllUsers(page, pageSize);
+      return { data, error: null, count };
+    } catch (err) {
+      return { data: null, error: err, count: 0 };
+    }
   };
 
   // ── Helpers ──────────────────────────────────────────────────
