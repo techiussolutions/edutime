@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/AppStore';
 import {
-  Settings2, Clock, CalendarDays, Users, ShieldCheck, Plus, Trash2, Save
+  Settings2, Clock, CalendarDays, Users, ShieldCheck, Plus, Trash2, Save,
+  ArrowUpFromLine, ArrowDownFromLine
 } from 'lucide-react';
 
 const TABS = [
@@ -150,9 +151,9 @@ export default function SettingsPage() {
           {tab==='periods' && (
             <div className="card anim-fade-in">
               <div className="card-header">
-                <div><h3>Period Timings</h3><p style={{fontSize:'.82rem'}}>Configure start/end time for each period. Mark periods as breaks.</p></div>
+                <div><h3>Period Timings</h3><p style={{fontSize:'.82rem'}}>Configure start/end time for each period. Use ↑↓ buttons to insert above or below.</p></div>
                 <div style={{ display:'flex', gap:'.5rem' }}>
-                  <button className="btn btn-outline btn-sm" onClick={()=>dispatch({type:'ADD_PERIOD'})}><Plus size={14}/>Add Period</button>
+                  <button className="btn btn-outline btn-sm" onClick={()=>dispatch({type:'ADD_PERIOD'})}><Plus size={14}/>Add at End</button>
                 </div>
               </div>
               <div style={{ padding:'1rem' }}>
@@ -164,11 +165,12 @@ export default function SettingsPage() {
                       <th style={{ padding:'.5rem .75rem', textAlign:'left', fontSize:'.8rem', color:'var(--tx-muted)', fontWeight:600 }}>Start</th>
                       <th style={{ padding:'.5rem .75rem', textAlign:'left', fontSize:'.8rem', color:'var(--tx-muted)', fontWeight:600 }}>End</th>
                       <th style={{ padding:'.5rem .75rem', textAlign:'center', fontSize:'.8rem', color:'var(--tx-muted)', fontWeight:600 }}>Is Break?</th>
+                      <th style={{ padding:'.5rem .75rem', textAlign:'center', fontSize:'.8rem', color:'var(--tx-muted)', fontWeight:600 }}>Insert</th>
                       <th style={{ padding:'.5rem .75rem', textAlign:'center', fontSize:'.8rem', color:'var(--tx-muted)', fontWeight:600 }}>Remove</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {settings.periodTimings.map(p => (
+                    {settings.periodTimings.map((p, idx) => (
                       <tr key={p.period} style={{ borderBottom:'1px solid var(--border)', background: p.isBreak ? 'var(--clr-amber-l)' : undefined }}>
                         <td style={{ padding:'.5rem .75rem', fontWeight:700, color: p.isBreak ? 'var(--clr-amber)' : 'var(--clr-primary)' }}>{p.period}</td>
                         <td style={{ padding:'.5rem .75rem' }}>
@@ -185,6 +187,16 @@ export default function SettingsPage() {
                             <input type="checkbox" checked={p.isBreak} onChange={()=>toggleBreak(p.period)}/>
                             <span className="toggle-track"/>
                           </label>
+                        </td>
+                        <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
+                          <div style={{ display:'flex', gap:'.25rem', justifyContent:'center' }}>
+                            <button className="btn btn-ghost btn-icon btn-sm" title="Insert above" onClick={()=>{dispatch({type:'ADD_PERIOD',payload:{afterIndex:idx}});toast();}}>
+                              <ArrowUpFromLine size={14}/>
+                            </button>
+                            <button className="btn btn-ghost btn-icon btn-sm" title="Insert below" onClick={()=>{dispatch({type:'ADD_PERIOD',payload:{afterIndex:idx+1}});toast();}}>
+                              <ArrowDownFromLine size={14}/>
+                            </button>
+                          </div>
                         </td>
                         <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
                           <button className="btn btn-ghost btn-icon btn-sm" onClick={()=>{dispatch({type:'REMOVE_PERIOD',payload:p.period});toast();}}>

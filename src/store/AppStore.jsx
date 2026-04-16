@@ -152,35 +152,47 @@ function reducer(state, action) {
         }
       };
       break;
-    case 'ADD_PERIOD':
+    case 'ADD_PERIOD': {
+      const timings = [...state.settings.periodTimings];
+      const insertIdx = action.payload?.afterIndex ?? timings.length; // default: append
+      const refPeriod = timings[insertIdx - 1]; // period before insertion point
+      const newStart = refPeriod ? refPeriod.end : '14:00';
+      const [hh, mm] = newStart.split(':').map(Number);
+      const endTotal = hh * 60 + mm + 45;
+      const newEnd = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+      const newEntry = {
+        period: 0, // placeholder, renumbered below
+        start: newStart,
+        end: newEnd,
+        label: 'New Period',
+        isBreak: false,
+      };
+      timings.splice(insertIdx, 0, newEntry);
+      // Renumber all periods sequentially
+      const renumbered = timings.map((t, i) => ({ ...t, period: i + 1 }));
       next = {
         ...state,
         settings: {
           ...state.settings,
-          periodsPerDay: state.settings.periodsPerDay + 1,
-          periodTimings: [
-            ...state.settings.periodTimings,
-            {
-              period: state.settings.periodsPerDay + 1,
-              start: '14:00',
-              end: '14:45',
-              label: `Period ${state.settings.periodsPerDay + 1}`,
-              isBreak: false
-            }
-          ]
+          periodsPerDay: renumbered.length,
+          periodTimings: renumbered,
         }
       };
       break;
-    case 'REMOVE_PERIOD':
+    }
+    case 'REMOVE_PERIOD': {
+      const filtered = state.settings.periodTimings.filter(p => p.period !== action.payload);
+      const renumbered = filtered.map((t, i) => ({ ...t, period: i + 1 }));
       next = {
         ...state,
         settings: {
           ...state.settings,
-          periodsPerDay: Math.max(1, state.settings.periodsPerDay - 1),
-          periodTimings: state.settings.periodTimings.filter(p => p.period !== action.payload)
+          periodsPerDay: Math.max(1, renumbered.length),
+          periodTimings: renumbered,
         }
       };
       break;
+    }
     case 'UPDATE_SCHOOL':
       next = { ...state, school: { ...state.school, ...action.payload } };
       break;
