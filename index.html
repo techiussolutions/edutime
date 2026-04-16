@@ -4,10 +4,32 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>scratch</title>
+    <title>EduTime</title>
+    <!-- Preconnect to Supabase & Google Fonts for faster handshake -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Load Google Fonts non-blocking (swap instead of block) -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap" media="print" onload="this.media='all'" />
+    <style>
+      /* Inline critical CSS so the loading screen paints immediately (no FOUC) */
+      body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif}
+      #app-loader{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1e1b4b 0%,#312e81 50%,#4338ca 100%)}
+      #app-loader .spinner{width:48px;height:48px;border:3px solid rgba(255,255,255,.2);border-top-color:#818cf8;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 1rem}
+      #app-loader p{color:#a5b4fc;font-size:.9rem;margin:0}
+      @keyframes spin{to{transform:rotate(360deg)}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Server-rendered loading screen — visible before ANY JS executes -->
+    <div id="root">
+      <div id="app-loader">
+        <div style="text-align:center">
+          <div class="spinner"></div>
+          <p>Loading EduTime…</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

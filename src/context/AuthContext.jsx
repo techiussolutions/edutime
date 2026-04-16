@@ -89,10 +89,10 @@ export function AuthProvider({ children }) {
 
   // ── Listen for auth state changes ────────────────────────────
   useEffect(() => {
-    // Safety net: if loading is still true after 8s, force it off
+    // Safety net: if loading is still true after 3s, force it off
     const loadingTimeout = setTimeout(() => {
       setLoading(false);
-    }, 8000);
+    }, 3000);
 
     // Get initial session on mount
     supabase.auth.getSession().then(({ data: { session: s } }) => {
