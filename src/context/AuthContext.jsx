@@ -59,9 +59,9 @@ export function AuthProvider({ children }) {
         if (profErr.code === 'PGRST116') {
           throw new Error('No user profile found. Contact your administrator.');
         }
-        // Other DB/RLS error — keep session alive, use cached data if available
+        // Other DB/RLS error — throw so callers (signIn) can surface it
         console.error('[AuthContext] Profile fetch error:', profErr.message);
-        return;
+        throw new Error(profErr.message || 'Failed to load user profile.');
       }
 
       if (!prof) throw new Error('No user profile found.');
@@ -120,7 +120,10 @@ export function AuthProvider({ children }) {
 
         setSession(s);
         if (s?.user) {
-          await fetchProfile(s.user.id);
+          // Skip if profile is already loaded (signIn handles it directly)
+          if (!profile || profile.id !== s.user.id) {
+            await fetchProfile(s.user.id);
+          }
         } else {
           setProfile(null);
           setSchool(null);
@@ -142,7 +145,14 @@ export function AuthProvider({ children }) {
       setError(authErr.message);
       return { error: authErr };
     }
-    // onAuthStateChange fires next and calls fetchProfile, which checks active status.
+    // Set session + fetch profile immediately — don't rely on async onAuthStateChange
+    setSession(data.session);
+    try {
+      await fetchProfile(data.user.id);
+    } catch (err) {
+      // fetchProfile already handles errors internally (sets error, signs out)
+      return { error: { message: err.message || 'Failed to load profile' } };
+    }
     // Fire last_login update in background — don’t await it during login.
     supabase.from('user_profiles')
       .update({ last_login: new Date().toISOString() })
