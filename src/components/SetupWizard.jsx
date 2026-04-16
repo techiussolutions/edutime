@@ -8,11 +8,11 @@ import {
 } from 'lucide-react';
 
 const STEPS = [
-  { id: 'school',    label: 'School Profile',      icon: Settings2 },
-  { id: 'days',      label: 'Working Days',         icon: CalendarDays },
-  { id: 'periods',   label: 'Period Timings',       icon: Clock },
-  { id: 'workload',  label: 'Workload Rules',       icon: Users },
-  { id: 'sub_rules', label: 'Substitution Rules',   icon: ShieldCheck },
+  { id: 'school',    label: 'School Profile',      icon: Settings2,    required: true },
+  { id: 'days',      label: 'Working Days',         icon: CalendarDays, required: true },
+  { id: 'periods',   label: 'Period Timings',       icon: Clock,        required: true },
+  { id: 'workload',  label: 'Workload Rules',       icon: Users,        required: false },
+  { id: 'sub_rules', label: 'Substitution Rules',   icon: ShieldCheck,  required: false },
 ];
 
 const DAY_EMOJIS = { Mon: '🌤', Tue: '☀️', Wed: '🌥', Thu: '🌤', Fri: '🎉', Sat: '📚' };
@@ -23,48 +23,22 @@ const SUB_RULES = [
   { id: 'any_free',     label: 'Any Free Teacher',       desc: 'Fall back to any available teacher' },
 ];
 
-// Add minutes to HH:MM
 function addMinutes(time, mins) {
   const [h, m] = time.split(':').map(Number);
   const total = h * 60 + m + mins;
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function buildTimings(startTime, periodLen, breakLen, numPeriods, breakAfter) {
-  const timings = [];
-  let current = startTime;
-  let periodNum = 1;
-  let teachingCount = 0;
-
-  for (let i = 0; i < numPeriods + breakAfter.length; i++) {
-    if (breakAfter.includes(teachingCount) && teachingCount > 0) {
-      const end = addMinutes(current, breakLen);
-      timings.push({
-        period: periodNum,
-        start: current,
-        end,
-        label: teachingCount === breakAfter[0] ? 'Break' : 'Lunch',
-        isBreak: true,
-      });
-      current = end;
-      periodNum++;
-    }
-
-    if (teachingCount >= numPeriods) break;
-
-    const end = addMinutes(current, periodLen);
-    timings.push({
-      period: periodNum,
-      start: current,
-      end,
-      label: `Period ${teachingCount + 1}`,
-      isBreak: false,
-    });
-    current = end;
-    periodNum++;
-    teachingCount++;
-  }
-  return timings;
+/** Check if the required setup (school profile, working days, period timings) is configured */
+export function isSetupComplete(state) {
+  const { school, settings } = state;
+  const schoolOk = school?.name && school.name !== 'Sunrise Public School'
+    && school?.code && school.code !== 'SPS2026';
+  const daysOk = settings?.workingDays && Object.values(settings.workingDays).some(v => v);
+  const periodsOk = settings?.periodTimings && settings.periodTimings.length >= 4
+    && settings.periodTimings.some(p => !p.isBreak);
+  const userSkipped = localStorage.getItem('edu_setup_skipped') === 'true';
+  return userSkipped || (schoolOk && daysOk && periodsOk);
 }
 
 export default function SetupWizard({ onComplete }) {
@@ -75,8 +49,8 @@ export default function SetupWizard({ onComplete }) {
 
   // ── School profile form ──────────────────────────────────
   const [schoolForm, setSchoolForm] = useState({
-    name: state.school?.name || school?.name || '',
-    code: state.school?.code || school?.code || '',
+    name: (state.school?.name && state.school.name !== 'Sunrise Public School') ? state.school.name : (school?.name || ''),
+    code: (state.school?.code && state.school.code !== 'SPS2026') ? state.school.code : (school?.code || ''),
     board: state.school?.board || 'CBSE',
     academicYear: state.school?.academicYear || '2025-2026',
     address: state.school?.address || '',
@@ -88,34 +62,53 @@ export default function SetupWizard({ onComplete }) {
   );
 
   // ── Period config ────────────────────────────────────────
-  const [periodLen, setPeriodLen]     = useState(45);
-  const [breakLen, setBreakLen]       = useState(15);
-  const [lunchLen, setLunchLen]       = useState(30);
-  const [numPeriods, setNumPeriods]   = useState(8);
-  const [startTime, setStartTime]    = useState('08:00');
-  const [breakAfter, setBreakAfter]  = useState([2, 5]); // break after 2nd and 5th teaching period
+  const [numPeriods, setNumPeriods] = useState(8);
+  const [periodLen, setPeriodLen]   = useState(45);
+  const [numBreaks, setNumBreaks]   = useState(2);
+  const [startTime, setStartTime]   = useState('08:00');
 
+  // Break config: each break has { afterPeriod, duration, label }
+  const [breaks, setBreaks] = useState([
+    { afterPeriod: 2, duration: 15, label: 'Break' },
+    { afterPeriod: 5, duration: 30, label: 'Lunch' },
+  ]);
+
+  // Keep breaks array in sync with numBreaks
+  useEffect(() => {
+    setBreaks(prev => {
+      if (prev.length === numBreaks) return prev;
+      if (prev.length < numBreaks) {
+        const arr = [...prev];
+        for (let i = prev.length; i < numBreaks; i++) {
+          const afterP = Math.min(Math.round(numPeriods / (numBreaks + 1)) * (i + 1), numPeriods);
+          arr.push({ afterPeriod: afterP, duration: 15, label: i === 1 ? 'Lunch' : `Break ${i + 1}` });
+        }
+        return arr;
+      }
+      return prev.slice(0, numBreaks);
+    });
+  }, [numBreaks, numPeriods]);
+
+  // ── Auto-generate timings from config ────────────────────
   const [timings, setTimings] = useState([]);
 
-  // Rebuild timings whenever config changes
   useEffect(() => {
-    const breaks = breakAfter.sort((a, b) => a - b);
+    const breakMap = {};
+    breaks.forEach(b => { breakMap[b.afterPeriod] = b; });
+
     const result = [];
     let current = startTime;
     let periodNum = 1;
     let teachingDone = 0;
 
     while (teachingDone < numPeriods) {
-      // Check if we need a break here
-      if (breaks.includes(teachingDone) && teachingDone > 0) {
-        const isLunch = breaks.indexOf(teachingDone) === 1;
-        const dur = isLunch ? lunchLen : breakLen;
-        const end = addMinutes(current, dur);
-        result.push({ period: periodNum, start: current, end, label: isLunch ? 'Lunch' : 'Break', isBreak: true });
+      if (breakMap[teachingDone] && teachingDone > 0) {
+        const brk = breakMap[teachingDone];
+        const end = addMinutes(current, brk.duration);
+        result.push({ period: periodNum, start: current, end, label: brk.label, isBreak: true });
         current = end;
         periodNum++;
       }
-
       const end = addMinutes(current, periodLen);
       result.push({ period: periodNum, start: current, end, label: `Period ${teachingDone + 1}`, isBreak: false });
       current = end;
@@ -123,16 +116,8 @@ export default function SetupWizard({ onComplete }) {
       teachingDone++;
     }
 
-    // Add final break if configured after last period
-    if (breaks.includes(teachingDone)) {
-      const isLunch = breaks.indexOf(teachingDone) === 1;
-      const dur = isLunch ? lunchLen : breakLen;
-      const end = addMinutes(current, dur);
-      result.push({ period: periodNum, start: current, end, label: isLunch ? 'Lunch' : 'Break', isBreak: true });
-    }
-
     setTimings(result);
-  }, [periodLen, breakLen, lunchLen, numPeriods, startTime, breakAfter]);
+  }, [periodLen, numPeriods, startTime, breaks]);
 
   // ── Workload ─────────────────────────────────────────────
   const [maxPeriods, setMaxPeriods] = useState(state.settings?.maxDefaultPeriods || 30);
@@ -152,10 +137,7 @@ export default function SetupWizard({ onComplete }) {
   const saveAll = useCallback(async () => {
     setSaving(true);
     try {
-      // Save school profile
       dispatch({ type: 'UPDATE_SCHOOL', payload: schoolForm });
-
-      // Save settings
       const breakPeriods = timings.filter(t => t.isBreak).map(t => t.period);
       dispatch({
         type: 'UPDATE_SETTINGS',
@@ -168,9 +150,7 @@ export default function SetupWizard({ onComplete }) {
           substitutionPriority: subRules,
         },
       });
-
-      // Mark setup complete
-      localStorage.setItem('edu_setup_done', 'true');
+      localStorage.removeItem('edu_setup_skipped');
       onComplete();
     } finally {
       setSaving(false);
@@ -179,16 +159,23 @@ export default function SetupWizard({ onComplete }) {
 
   const canNext = () => {
     if (step === 0) return schoolForm.name.trim() && schoolForm.code.trim();
+    if (step === 1) return Object.values(workingDays).some(v => v);
+    if (step === 2) return numPeriods >= 4 && periodLen >= 20 && timings.length > 0;
     return true;
   };
 
   const next = () => { if (step < STEPS.length - 1) setStep(step + 1); else saveAll(); };
   const prev = () => { if (step > 0) setStep(step - 1); };
 
+  const handleSkip = () => {
+    localStorage.setItem('edu_setup_skipped', 'true');
+    onComplete();
+  };
+
   return createPortal(
     <div className="modal-overlay" style={{ padding: 0 }}>
       <div style={{
-        display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 860,
+        display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 900,
         height: '100vh', maxHeight: '100vh', background: 'var(--bg-card)',
         margin: '0 auto', boxShadow: 'var(--sh-xl)',
       }}>
@@ -202,12 +189,12 @@ export default function SetupWizard({ onComplete }) {
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>🏫 School Setup</h2>
             <p style={{ margin: '.25rem 0 0', fontSize: '.82rem', color: 'var(--tx-muted)' }}>
               Configure your school in {STEPS.length} easy steps
+              <span style={{ marginLeft: '.5rem', color: 'var(--clr-red)', fontSize: '.75rem' }}>
+                * Steps 1–3 are required
+              </span>
             </p>
           </div>
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => { localStorage.setItem('edu_setup_done', 'true'); onComplete(); }}
-          >
+          <button className="btn btn-outline btn-sm" onClick={handleSkip}>
             Do it later
           </button>
         </div>
@@ -215,8 +202,7 @@ export default function SetupWizard({ onComplete }) {
         {/* Step indicators */}
         <div style={{
           display: 'flex', gap: '.25rem', padding: '1rem 2rem',
-          borderBottom: '1px solid var(--border)', flexShrink: 0,
-          overflowX: 'auto',
+          borderBottom: '1px solid var(--border)', flexShrink: 0, overflowX: 'auto',
         }}>
           {STEPS.map((s, i) => {
             const Icon = s.icon;
@@ -229,7 +215,8 @@ export default function SetupWizard({ onComplete }) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: '.5rem',
                   padding: '.5rem .75rem', borderRadius: 'var(--r-lg)',
-                  fontSize: '.8rem', fontWeight: 600, border: 'none', cursor: i <= step ? 'pointer' : 'default',
+                  fontSize: '.8rem', fontWeight: 600, border: 'none',
+                  cursor: i <= step ? 'pointer' : 'default',
                   background: active ? 'var(--clr-primary-l)' : done ? 'var(--clr-green-l)' : 'transparent',
                   color: active ? 'var(--clr-primary)' : done ? 'var(--clr-green)' : 'var(--tx-muted)',
                   transition: 'var(--ease)', whiteSpace: 'nowrap',
@@ -237,6 +224,7 @@ export default function SetupWizard({ onComplete }) {
               >
                 {done ? <Check size={14} /> : <Icon size={14} />}
                 {s.label}
+                {s.required && <span style={{ color: 'var(--clr-red)', fontSize: '.7rem' }}>*</span>}
               </button>
             );
           })}
@@ -245,7 +233,7 @@ export default function SetupWizard({ onComplete }) {
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 2rem' }}>
 
-          {/* Step 1: School Profile */}
+          {/* ─── Step 1: School Profile ─────────────────── */}
           {step === 0 && (
             <div className="anim-fade-in">
               <h3 style={{ marginBottom: '1rem' }}>School Profile</h3>
@@ -292,7 +280,7 @@ export default function SetupWizard({ onComplete }) {
             </div>
           )}
 
-          {/* Step 2: Working Days */}
+          {/* ─── Step 2: Working Days ───────────────────── */}
           {step === 1 && (
             <div className="anim-fade-in">
               <h3 style={{ marginBottom: '1rem' }}>Working Days</h3>
@@ -318,68 +306,103 @@ export default function SetupWizard({ onComplete }) {
             </div>
           )}
 
-          {/* Step 3: Period Timings */}
+          {/* ─── Step 3: Period Timings ─────────────────── */}
           {step === 2 && (
             <div className="anim-fade-in">
-              <h3 style={{ marginBottom: '1rem' }}>Period Timings</h3>
-              <p style={{ marginBottom: '1.5rem', fontSize: '.9rem', color: 'var(--tx-muted)' }}>
-                Set period length and breaks. The timetable auto-calculates in real time.
+              <h3 style={{ marginBottom: '.5rem' }}>Period Timings</h3>
+              <p style={{ marginBottom: '1.25rem', fontSize: '.9rem', color: 'var(--tx-muted)' }}>
+                Tell us about your school day and we'll generate the schedule automatically.
               </p>
 
-              {/* Config controls */}
-              <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+              {/* Basic config */}
+              <div className="card" style={{ padding: '1.25rem', marginBottom: '1.25rem' }}>
+                <h4 style={{ marginBottom: '1rem', fontSize: '.9rem' }}>📋 Basic Configuration</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
                   <div className="field">
-                    <label>School Starts</label>
+                    <label>School Start Time</label>
                     <input type="time" className="input" value={startTime}
                       onChange={e => setStartTime(e.target.value)} />
                   </div>
                   <div className="field">
-                    <label>Period Length</label>
+                    <label>No. of Teaching Periods</label>
+                    <input type="number" className="input" min={4} max={12} value={numPeriods}
+                      onChange={e => setNumPeriods(Math.max(4, Math.min(12, Number(e.target.value))))} />
+                  </div>
+                  <div className="field">
+                    <label>Each Period Duration</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
                       <input type="number" className="input" min={20} max={90} value={periodLen}
-                        onChange={e => setPeriodLen(Number(e.target.value))} style={{ width: 80 }} />
+                        onChange={e => setPeriodLen(Math.max(20, Math.min(90, Number(e.target.value))))} style={{ width: 80 }} />
                       <span style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>min</span>
                     </div>
                   </div>
                   <div className="field">
-                    <label>Break Duration</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                      <input type="number" className="input" min={5} max={30} value={breakLen}
-                        onChange={e => setBreakLen(Number(e.target.value))} style={{ width: 80 }} />
-                      <span style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>min</span>
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>Lunch Duration</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                      <input type="number" className="input" min={15} max={60} value={lunchLen}
-                        onChange={e => setLunchLen(Number(e.target.value))} style={{ width: 80 }} />
-                      <span style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>min</span>
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>Teaching Periods</label>
-                    <input type="number" className="input" min={4} max={12} value={numPeriods}
-                      onChange={e => setNumPeriods(Number(e.target.value))} style={{ width: 80 }} />
-                  </div>
-                  <div className="field">
-                    <label>Break After Period</label>
-                    <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
-                      <input type="number" className="input" min={1} max={numPeriods} value={breakAfter[0] || 2}
-                        onChange={e => setBreakAfter(p => [Number(e.target.value), p[1] || 5])}
-                        style={{ width: 55 }} />
-                      <span style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>&</span>
-                      <input type="number" className="input" min={1} max={numPeriods} value={breakAfter[1] || 5}
-                        onChange={e => setBreakAfter(p => [p[0] || 2, Number(e.target.value)])}
-                        style={{ width: 55 }} />
-                    </div>
+                    <label>No. of Breaks</label>
+                    <input type="number" className="input" min={0} max={4} value={numBreaks}
+                      onChange={e => setNumBreaks(Math.max(0, Math.min(4, Number(e.target.value))))} />
                   </div>
                 </div>
               </div>
 
-              {/* Preview */}
-              <h4 style={{ marginBottom: '.75rem' }}>Preview</h4>
+              {/* Break configuration */}
+              {numBreaks > 0 && (
+                <div className="card" style={{ padding: '1.25rem', marginBottom: '1.25rem' }}>
+                  <h4 style={{ marginBottom: '1rem', fontSize: '.9rem' }}>☕ Break Configuration</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+                    {breaks.map((brk, i) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+                        padding: '.75rem 1rem', borderRadius: 'var(--r-lg)',
+                        background: 'var(--clr-amber-l)', border: '1px solid #fcd34d',
+                      }}>
+                        <div style={{ fontWeight: 700, color: 'var(--clr-amber)', fontSize: '.85rem', minWidth: 70 }}>
+                          Break {i + 1}
+                        </div>
+                        <div className="field" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '.75rem' }}>Label</label>
+                          <input className="input input-sm" value={brk.label} style={{ width: 110 }}
+                            onChange={e => {
+                              const arr = [...breaks];
+                              arr[i] = { ...arr[i], label: e.target.value };
+                              setBreaks(arr);
+                            }} />
+                        </div>
+                        <div className="field" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '.75rem' }}>After Period #</label>
+                          <input type="number" className="input input-sm" min={1} max={numPeriods}
+                            value={brk.afterPeriod} style={{ width: 65 }}
+                            onChange={e => {
+                              const arr = [...breaks];
+                              arr[i] = { ...arr[i], afterPeriod: Math.max(1, Math.min(numPeriods, Number(e.target.value))) };
+                              setBreaks(arr);
+                            }} />
+                        </div>
+                        <div className="field" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '.75rem' }}>Duration</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+                            <input type="number" className="input input-sm" min={5} max={60}
+                              value={brk.duration} style={{ width: 60 }}
+                              onChange={e => {
+                                const arr = [...breaks];
+                                arr[i] = { ...arr[i], duration: Math.max(5, Math.min(60, Number(e.target.value))) };
+                                setBreaks(arr);
+                              }} />
+                            <span style={{ fontSize: '.78rem', color: 'var(--tx-muted)' }}>min</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-generated preview */}
+              <h4 style={{ marginBottom: '.75rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                📅 Generated Schedule
+                <span style={{ fontSize: '.78rem', fontWeight: 400, color: 'var(--tx-muted)' }}>
+                  (auto-calculated from your inputs)
+                </span>
+              </h4>
               <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -420,16 +443,15 @@ export default function SetupWizard({ onComplete }) {
                   </tbody>
                 </table>
               </div>
-
               <div className="alert alert-info" style={{ marginTop: '1rem', fontSize: '.82rem' }}>
                 <span>💡</span>
                 <span>School ends at <strong>{timings.length ? timings[timings.length - 1].end : '--:--'}</strong>. 
-                Adjust period length or break times to change the schedule.</span>
+                You can fine-tune individual timings later in Settings.</span>
               </div>
             </div>
           )}
 
-          {/* Step 4: Workload Rules */}
+          {/* ─── Step 4: Workload Rules ─────────────────── */}
           {step === 3 && (
             <div className="anim-fade-in">
               <h3 style={{ marginBottom: '1rem' }}>Workload Rules</h3>
@@ -447,7 +469,6 @@ export default function SetupWizard({ onComplete }) {
                   </small>
                 </div>
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1.5rem', maxWidth: 600 }}>
                 <div style={{ padding: '1rem', borderRadius: 'var(--r-lg)', background: 'var(--clr-green-l)', border: '1px solid #6ee7b7' }}>
                   <div style={{ fontWeight: 700, color: 'var(--clr-green)' }}>Under &lt; 70%</div>
@@ -465,12 +486,12 @@ export default function SetupWizard({ onComplete }) {
             </div>
           )}
 
-          {/* Step 5: Substitution Rules */}
+          {/* ─── Step 5: Substitution Rules ─────────────── */}
           {step === 4 && (
             <div className="anim-fade-in">
               <h3 style={{ marginBottom: '.5rem' }}>Substitution Priority Rules</h3>
               <p style={{ marginBottom: '1.5rem', fontSize: '.9rem', color: 'var(--tx-muted)' }}>
-                Set the priority order for finding substitute teachers. Drag to reorder.
+                Set the priority order for finding substitute teachers.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', maxWidth: 520 }}>
                 {subRules.map((ruleId, idx) => {

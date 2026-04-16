@@ -1,9 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { loadSchoolData as apiLoadSchoolData, syncAction } from '../lib/api';
-import {
-  DEFAULT_SCHOOL, DEFAULT_SETTINGS, SUBJECTS, TEACHERS, CLASSES, SCHEDULE, CLASS_ASSIGNMENTS
-} from './initialData';
+import { DEFAULT_SCHOOL, DEFAULT_SETTINGS } from './initialData';
 
 const AppContext = createContext();
 
@@ -48,24 +46,18 @@ const buildAvailabilityMap = (rows) => {
   return map;
 };
 
-// Seed data mappers (app shape → DB shape for seeding)
-const mapTeacherToSeed = (t) => ({ id: t.id, name: t.name, department: t.department || '', subjects: t.subjects || [], max_periods: t.maxPeriods ?? 30, phone: t.phone || '', email: t.email || '', designation: t.designation || '', joining: t.joining || '', active: t.active !== false });
-const mapClassToSeed = (c) => ({ id: c.id, name: c.name, grade: c.grade, section: c.section, grade_group: c.gradeGroup, class_teacher_id: c.classTeacherId || null });
-const mapSubjectToSeed = (s) => ({ id: s.id, name: s.name, code: s.code, grade_groups: s.gradeGroups || [] });
-const mapAssignToSeed = (a) => ({ id: a.id, class_id: a.classId, subject_id: a.subjectId, teacher_id: a.teacherId || null });
-
 // ── LOAD ALL DATA VIA API ────────────────────────────────────
 async function loadData(schoolId) {
   const data = await apiLoadSchoolData(schoolId);
 
   if (data.isEmpty) {
-    // Seed initial data for new school
+    // Seed only default settings for new school (no demo data)
     await syncAction('SEED', schoolId, {
       settings: mapSettingsToDb(DEFAULT_SETTINGS, {}, {}, []),
-      teachers: TEACHERS.map(mapTeacherToSeed),
-      classes: CLASSES.map(mapClassToSeed),
-      subjects: SUBJECTS.map(mapSubjectToSeed),
-      assignments: CLASS_ASSIGNMENTS.map(mapAssignToSeed),
+      teachers: [],
+      classes: [],
+      subjects: [],
+      assignments: [],
     });
     return null; // caller will re-load
   }
@@ -102,11 +94,11 @@ async function syncActionToNeon(action, schoolId) {
 const DEFAULT_STATE = {
   school: DEFAULT_SCHOOL,
   settings: DEFAULT_SETTINGS,
-  teachers: TEACHERS,
-  classes: CLASSES,
-  subjects: SUBJECTS,
-  schedule: SCHEDULE,
-  classAssignments: CLASS_ASSIGNMENTS,
+  teachers: [],
+  classes: [],
+  subjects: [],
+  schedule: [],
+  classAssignments: [],
   periodsConfig: {},
   classPeriodSettings: {},
   lockedSlots: [],

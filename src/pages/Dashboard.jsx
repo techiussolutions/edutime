@@ -10,21 +10,20 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
-import SetupWizard from '../components/SetupWizard';
+import SetupWizard, { isSetupComplete } from '../components/SetupWizard';
 
 export default function Dashboard() {
   const { state, dbLoaded } = useApp();
   const { isAdmin, isSuperAdmin } = useAuth();
 
-  // Show setup wizard on first login for school admins
+  // Show setup wizard on each login until required settings are configured
   const [showSetup, setShowSetup] = useState(false);
   useEffect(() => {
     if (!dbLoaded || isSuperAdmin) return;
-    const done = localStorage.getItem('edu_setup_done');
-    if (!done && (isAdmin || !done)) {
+    if (!isSetupComplete(state)) {
       setShowSetup(true);
     }
-  }, [dbLoaded, isAdmin, isSuperAdmin]);
+  }, [dbLoaded, isSuperAdmin, state.school, state.settings]);
   const navigate = useNavigate();
   const today = new Date().toISOString().split('T')[0];
   const todayDay = new Date().getDay(); // 0=Sun, 1=Mon...
