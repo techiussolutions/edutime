@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -24,8 +24,34 @@ export default function TimetablePage() {
   const [selectedTeacher,setSelectedTeacher]= useState(teachers[0]?.id);
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printClassIds,  setPrintClassIds]  = useState([]);
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
+
+  // ── Print helpers ──────────────────────────────────────────────────────
+  const getPeriodsForClass = (classId) => {
+    const custom = classPeriodSettings[classId];
+    return custom ? custom.periodTimings : settings.periodTimings;
+  };
+  const getCellForPrint = (classId, dayKey, period) => {
+    const dIdx = DAY_IDX[dayKey];
+    return schedule.find(s => s.classId===classId && s.day===dIdx && s.period===period) || null;
+  };
+  const openPrintModal = () => {
+    setPrintClassIds(classes.map(c => c.id));
+    setShowPrintModal(true);
+  };
+  const togglePrintClass = (id) => {
+    setPrintClassIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleAllPrint = () => {
+    setPrintClassIds(prev => prev.length === classes.length ? [] : classes.map(c => c.id));
+  };
+  const doPrint = () => {
+    setShowPrintModal(false);
+    setTimeout(() => window.print(), 100);
+  };
 
   // Resolve effective period timings: class-specific if available, else global
   const getEffectivePeriods = () => {
@@ -122,7 +148,7 @@ export default function TimetablePage() {
           <p>View and edit the school schedule. Click a cell to assign — lock cells to protect from regeneration.</p>
         </div>
         <div style={{ display:'flex', gap:'.75rem', alignItems:'center' }}>
-          <button className="btn btn-outline no-print" onClick={()=>window.print()} title="Print / Save as PDF">
+          <button className="btn btn-outline no-print" onClick={openPrintModal} title="Print / Save as PDF">
             <Printer size={15}/> Print
           </button>
           {lockedSlots.length > 0 && (
@@ -343,6 +369,88 @@ export default function TimetablePage() {
           </div>
         </div>
       )}
+      {/* ── Print Class Selection Modal ── */}
+      {showPrintModal && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPrintModal(false)}>
+          <div className="modal" style={{ maxWidth:420 }}>
+            <div className="modal-header">
+              <h3>Print Timetables</h3>
+              <button className="btn btn-ghost btn-icon" onClick={()=>setShowPrintModal(false)}><X size={16}/></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Select classes to include. Each class prints on its own page.</p>
+              <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.5rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6 }}>
+                <input type="checkbox" checked={printClassIds.length === classes.length} onChange={toggleAllPrint}/>
+                Select All ({classes.length})
+              </label>
+              <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
+                {classes.map(c => (
+                  <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
+                    <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={()=>setShowPrintModal(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={printClassIds.length===0} onClick={doPrint}>
+                <Printer size={14}/> Print {printClassIds.length} Class{printClassIds.length!==1?'es':''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hidden print pages — one per selected class ── */}
+      <div className="print-pages">
+        {printClassIds.map(cid => {
+          const cls = classes.find(c => c.id === cid);
+          if (!cls) return null;
+          const periods = getPeriodsForClass(cid);
+          return (
+            <div key={cid} className="print-page">
+              <div className="print-page-header">
+                <h2>{school?.name || 'School Timetable'}</h2>
+                <p>Class: {cls.name}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+              </div>
+              <table className="tt-table print-tt">
+                <thead>
+                  <tr>
+                    <th className="day-col">DAY</th>
+                    {periods.map(p => (
+                      <th key={p.period}>
+                        {p.label}{p.isBreak ? ' 🫖' : ''}
+                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeDays.map(dayKey => (
+                    <tr key={dayKey}>
+                      <th className="day-col">{dayKey}</th>
+                      {periods.map(p => {
+                        if (p.isBreak) return <td key={p.period} className="tt-cell break"><div className="tt-slot"><span className="break-label">☕</span></div></td>;
+                        const slot = getCellForPrint(cid, dayKey, p.period);
+                        const t = slot ? teachers.find(x=>x.id===slot.teacherId) : null;
+                        const s = slot ? subjects.find(x=>x.id===slot.subjectId) : null;
+                        return (
+                          <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
+                            <div className="tt-slot">
+                              {slot ? (<><span className="sub">{s?.code}</span><span className="teacher">{t?.name?.split(' ')[0] ?? '—'}</span></>) : null}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -788,50 +788,61 @@ tbody tr:hover { background: var(--bg-muted); }
   }
 }
 
-/* ─── Print header (hidden on screen) ───────────────────────────────────── */
+/* ─── Print pages (hidden on screen, shown when printing) ───────────── */
+.print-pages { display: none; }
 .print-header { display: none; }
 
 /* ─── Print styles ────────────────────────────────────────────────────── */
 @media print {
-  /* Hide everything except the timetable content */
+  /* Hide screen UI */
   .sidebar, .page-header, .no-print, .modal-overlay,
   .tabs, nav, header, .lock-btn,
-  select, input[type="date"] { display: none !important; }
+  select, input[type="date"],
+  .card.card-body { display: none !important; }
 
-  /* Show print header */
-  .print-header {
-    display: block !important;
+  /* Hide the interactive timetable grid (we use print-pages instead) */
+  .print-header { display: none !important; }
+  .card:has(.tt-grid) { display: none !important; }
+
+  /* Show print pages */
+  .print-pages { display: block !important; }
+
+  /* Each class on its own page */
+  .print-page {
+    page-break-after: always;
+    break-after: page;
+    padding: 0;
+    width: 100%;
+  }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+
+  .print-page-header {
     text-align: center;
     margin-bottom: .5rem;
     padding-bottom: .35rem;
     border-bottom: 2px solid #333;
   }
-  .print-header h2 { font-size: 1.1rem; margin: 0 0 .15rem; }
-  .print-header p  { font-size: .75rem; margin: 0; color: #555; }
+  .print-page-header h2 { font-size: 1.1rem; margin: 0 0 .15rem; }
+  .print-page-header p  { font-size: .75rem; margin: 0; color: #555; }
 
-  /* Reset layout — full width, no sidebar offset */
+  /* Reset layout — full width */
   * { box-sizing: border-box; }
   body, html { margin: 0; padding: 0; width: 100%; overflow: visible !important; }
   .app-layout { display: block !important; width: 100% !important; }
   .main-content { margin: 0 !important; padding: .25rem !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; }
   .anim-fade-up { width: 100% !important; overflow: visible !important; }
 
-  /* Controls bar — hide */
-  .card.card-body { display: none !important; }
-
-  /* Timetable card — no shadow, full width, no overflow */
-  .card { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; overflow: visible !important; }
-  .tt-grid { overflow: visible !important; width: 100% !important; }
-
-  /* Force table to fit A4 landscape width */
-  .tt-table {
+  /* Force tables to fit A4 landscape */
+  .print-tt, .tt-table {
     min-width: 0 !important;
     width: 100% !important;
     table-layout: fixed !important;
     font-size: .65rem;
+    border-collapse: collapse;
     word-wrap: break-word;
     overflow-wrap: break-word;
   }
+  .print-tt th, .print-tt td,
   .tt-table th, .tt-table td {
     padding: .25rem .3rem !important;
     border: 1px solid #999 !important;
@@ -839,19 +850,23 @@ tbody tr:hover { background: var(--bg-muted); }
     text-overflow: ellipsis;
     white-space: normal !important;
     word-break: break-word;
+    text-align: center;
   }
-  .tt-table th.day-col {
+  .print-tt th.day-col, .tt-table th.day-col {
     width: 50px !important;
     background: #e0e0e0 !important;
     color: #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .tt-table thead th {
+  .print-tt thead th, .tt-table thead th {
+    background: var(--bg-muted, #f3f4f6) !important;
     font-size: .6rem;
     line-height: 1.2;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  .tt-table thead th span { font-size: .55rem !important; }
+  .print-tt thead th span, .tt-table thead th span { font-size: .55rem !important; }
   .tt-cell.assigned { background: #f0fdf4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .tt-cell.break { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .tt-slot { padding: .15rem 0 !important; gap: 0 !important; }
