@@ -3,7 +3,7 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
-import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer } from 'lucide-react';
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
 const DAY_IDX  = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
@@ -14,7 +14,7 @@ export default function TimetablePage() {
   const navigate = useNavigate();
   const canEdit = can('editTimetable');
   const {
-    settings, schedule, teachers, subjects, classes,
+    settings, schedule, teachers, subjects, classes, school,
     lockedSlots = [], classAssignments = [], teacherAvailability = {},
     classPeriodSettings = {}
   } = state;
@@ -122,6 +122,9 @@ export default function TimetablePage() {
           <p>View and edit the school schedule. Click a cell to assign — lock cells to protect from regeneration.</p>
         </div>
         <div style={{ display:'flex', gap:'.75rem', alignItems:'center' }}>
+          <button className="btn btn-outline no-print" onClick={()=>window.print()} title="Print / Save as PDF">
+            <Printer size={15}/> Print
+          </button>
           {lockedSlots.length > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:'.375rem', fontSize:'.82rem', color:'#92400e', background:'#fef3c7', border:'1px solid #fcd34d', padding:'.35rem .75rem', borderRadius:20 }}>
               <Lock size={13}/> {lockedSlots.length} locked
@@ -160,6 +163,18 @@ export default function TimetablePage() {
           <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'#fffbeb', border:'1px solid #fcd34d', marginRight:4 }}/><Lock size={9} style={{ marginRight:4 }}/>Locked</span>
           <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'var(--bg-muted)', border:'1px solid var(--border)', marginRight:4 }}/>Break</span>
         </div>
+      </div>
+
+      {/* Print header — only visible when printing */}
+      <div className="print-header">
+        <h2>{school?.name || 'School Timetable'}</h2>
+        <p>
+          {viewMode === 'class'
+            ? `Class: ${classes.find(c => c.id === selectedClass)?.name || '—'}`
+            : `Teacher: ${teachers.find(t => t.id === selectedTeacher)?.name || '—'}`
+          }
+          {' · '}{settings.academicYear || school?.academicYear || ''}
+        </p>
       </div>
 
       {/* Grid */}

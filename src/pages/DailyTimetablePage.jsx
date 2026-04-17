@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/AppStore';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, Printer } from 'lucide-react';
 
 const DAY_IDX = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5 };
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function DailyTimetablePage() {
   const { state } = useApp();
-  const { settings, schedule, teachers, subjects, classes, substitutions = [], classAssignments = [], classPeriodSettings = {} } = state;
+  const { settings, schedule, teachers, subjects, classes, school, substitutions = [], classAssignments = [], classPeriodSettings = {} } = state;
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [viewMode, setViewMode] = useState('class');
@@ -44,8 +44,11 @@ export default function DailyTimetablePage() {
           <h2>Daily Timetable</h2>
           <p>Real-time view of the day's schedule, including substitutions.</p>
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center' }}>
           <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
+          <button className="btn btn-outline no-print" onClick={() => window.print()} title="Print / Save as PDF">
+            <Printer size={15} /> Print
+          </button>
         </div>
       </div>
 
@@ -63,6 +66,18 @@ export default function DailyTimetablePage() {
               {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
         }
+      </div>
+
+      {/* Print header — only visible when printing */}
+      <div className="print-header">
+        <h2>{school?.name || 'School Timetable'}</h2>
+        <p>
+          {viewMode === 'class'
+            ? `Class: ${classes.find(c => c.id === selectedClass)?.name || '—'}`
+            : `Teacher: ${teachers.find(t => t.id === selectedTeacher)?.name || '—'}`
+          }
+          {' · '}{dayKey} {dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+        </p>
       </div>
 
       {!isWorkingDay ? (
