@@ -96,7 +96,8 @@ export default function TimetableWizard({ onClose, onApply }) {
 
   const activeDayKeys = Object.entries(state.settings.workingDays)
     .filter(([, v]) => v)
-    .map(([k]) => k);
+    .map(([k]) => k)
+    .sort((a, b) => { const o = {Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5}; return o[a] - o[b]; });
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>

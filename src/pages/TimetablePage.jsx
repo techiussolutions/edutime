@@ -24,7 +24,7 @@ export default function TimetablePage() {
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
 
-  const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k);
+  const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
 
   const slotId  = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
   const isLocked= (classId, dayKey, period) => lockedSlots.includes(slotId(classId, dayKey, period));

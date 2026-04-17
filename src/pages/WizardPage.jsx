@@ -23,7 +23,7 @@ export default function WizardPage() {
 
   const { settings, teachers, subjects, classes, schedule, lockedSlots, classAssignments = [], periodsConfig = {}, classPeriodSettings = {} } = state;
   const activeDayCount = Object.values(settings.workingDays).filter(Boolean).length;
-  const activeDayKeys = Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k);
+  const activeDayKeys = Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => { const o = {Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5}; return o[a]-o[b]; });
   const nonBreakPeriods = settings.periodTimings.filter(p => !p.isBreak);
 
   // Per-class helper: resolve the effective period timings for a class

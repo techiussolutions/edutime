@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../store/AppStore';
 import { CalendarCheck, RotateCcw, CheckSquare, Square, Search } from 'lucide-react';
 
+const DAY_IDX = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
+
 export default function TeacherAvailabilityPage() {
   const { state, dispatch } = useApp();
   const { teachers, settings, teacherAvailability = {} } = state;
@@ -11,7 +13,7 @@ export default function TeacherAvailabilityPage() {
   const [saved, setSaved] = useState(false);
 
   const activeDays = useMemo(
-    () => Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k),
+    () => Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => DAY_IDX[a] - DAY_IDX[b]),
     [settings.workingDays]
   );
   const nonBreakPeriods = useMemo(
