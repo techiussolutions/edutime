@@ -54,10 +54,24 @@ export default function TimetablePage() {
   };
 
   // Resolve effective period timings: class-specific if available, else global
+  // For teacher view, use the longest period list across all classes they teach
   const getEffectivePeriods = () => {
     if (viewMode === 'class' && selectedClass) {
       const custom = classPeriodSettings[selectedClass];
       if (custom) return custom.periodTimings;
+    }
+    if (viewMode === 'teacher' && selectedTeacher) {
+      const teacherClassIds = [...new Set(
+        schedule.filter(s => s.teacherId === selectedTeacher).map(s => s.classId)
+      )];
+      let longest = settings.periodTimings;
+      for (const cid of teacherClassIds) {
+        const custom = classPeriodSettings[cid];
+        if (custom && custom.periodTimings.length > longest.length) {
+          longest = custom.periodTimings;
+        }
+      }
+      return longest;
     }
     return settings.periodTimings;
   };
