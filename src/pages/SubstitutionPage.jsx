@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../store/AppStore';
+import { useAuth } from '../context/AuthContext';
 import { getSuggestedSubstitutes } from '../utils/engine';
 import { UserMinus, Check, Clock, RotateCcw, Printer } from 'lucide-react';
 
@@ -8,6 +9,7 @@ const DAY_IDX = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
 
 export default function SubstitutionPage() {
   const { state, dispatch } = useApp();
+  const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const todayDayKey = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date().getDay()];
   const todayIdx = DAY_IDX[todayDayKey] ?? 0;
@@ -39,7 +41,7 @@ export default function SubstitutionPage() {
       id: `sub_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       date: today, day: todayIdx, period, scheduleId,
       absentTeacherId, substituteTeacherId,
-      assignedBy: state.auth.user?.name ?? 'Admin',
+      assignedBy: user?.name ?? 'Admin',
       timestamp: new Date().toISOString()
     }});
   };
@@ -170,7 +172,10 @@ export default function SubstitutionPage() {
                               <div style={{ padding:'.75rem 1rem' }}>
                                 <div style={{ fontSize:'.78rem', fontWeight:600, color:'var(--tx-muted)', marginBottom:'.5rem' }}>SUGGESTED FREE TEACHERS</div>
                                 <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap' }}>
-                                  {suggestions.slice(0,5).map(sug => (
+                                  {suggestions.slice(0,5).map(sug => {
+                                    const matchLabel = sug.score >= 40 ? 'Best' : sug.score >= 20 ? 'Good' : 'OK';
+                                    const matchColor = sug.score >= 40 ? 'badge-green' : sug.score >= 20 ? 'badge-indigo' : 'badge-muted';
+                                    return (
                                     <button
                                       key={sug.teacher.id}
                                       className="btn btn-outline btn-sm"
@@ -179,9 +184,10 @@ export default function SubstitutionPage() {
                                       title={sug.reasons.join(' · ')}
                                     >
                                       {sug.teacher.name.split(' ')[0]}
-                                      <span className="badge badge-indigo" style={{ fontSize:'.7rem', padding:'.1rem .35rem' }}>{sug.score}pts</span>
+                                      <span className={`badge ${matchColor}`} style={{ fontSize:'.7rem', padding:'.1rem .35rem' }}>{matchLabel}</span>
                                     </button>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                                 {suggestions.length===0 && <p style={{ fontSize:'.82rem', color:'var(--clr-red)' }}>⚠ No free teachers available this period.</p>}
                               </div>
