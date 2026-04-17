@@ -802,30 +802,64 @@ tbody tr:hover { background: var(--bg-muted); }
   .print-header {
     display: block !important;
     text-align: center;
-    margin-bottom: 1rem;
-    padding-bottom: .5rem;
+    margin-bottom: .5rem;
+    padding-bottom: .35rem;
     border-bottom: 2px solid #333;
   }
-  .print-header h2 { font-size: 1.3rem; margin: 0 0 .25rem; }
-  .print-header p  { font-size: .85rem; margin: 0; color: #555; }
+  .print-header h2 { font-size: 1.1rem; margin: 0 0 .15rem; }
+  .print-header p  { font-size: .75rem; margin: 0; color: #555; }
 
   /* Reset layout — full width, no sidebar offset */
-  body, html { margin: 0; padding: 0; }
-  .app-layout { display: block !important; }
-  .main-content { margin: 0 !important; padding: .5rem !important; }
+  * { box-sizing: border-box; }
+  body, html { margin: 0; padding: 0; width: 100%; overflow: visible !important; }
+  .app-layout { display: block !important; width: 100% !important; }
+  .main-content { margin: 0 !important; padding: .25rem !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; }
+  .anim-fade-up { width: 100% !important; overflow: visible !important; }
 
   /* Controls bar — hide */
   .card.card-body { display: none !important; }
 
-  /* Timetable card — no shadow, full width */
-  .card { box-shadow: none !important; border: none !important; margin: 0 !important; }
-  .tt-grid { overflow: visible !important; }
-  .tt-table { min-width: 0 !important; font-size: .75rem; }
-  .tt-table th, .tt-table td { padding: .35rem .5rem !important; border: 1px solid #999 !important; }
-  .tt-table th.day-col { background: #e0e0e0 !important; color: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Timetable card — no shadow, full width, no overflow */
+  .card { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; overflow: visible !important; }
+  .tt-grid { overflow: visible !important; width: 100% !important; }
+
+  /* Force table to fit A4 landscape width */
+  .tt-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: .65rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  .tt-table th, .tt-table td {
+    padding: .25rem .3rem !important;
+    border: 1px solid #999 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+  .tt-table th.day-col {
+    width: 50px !important;
+    background: #e0e0e0 !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .tt-table thead th {
+    font-size: .6rem;
+    line-height: 1.2;
+  }
+  .tt-table thead th span { font-size: .55rem !important; }
   .tt-cell.assigned { background: #f0fdf4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .tt-cell.break { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tt-slot { padding: .15rem 0 !important; gap: 0 !important; }
+  .tt-slot .sub { font-size: .6rem !important; }
+  .tt-slot .teacher { font-size: .55rem !important; }
+  .tt-slot .cls { font-size: .5rem !important; }
+  .tt-slot .break-label { font-size: .6rem !important; }
 
-  /* Page setup */
-  @page { size: landscape; margin: 10mm; }
+  /* Page setup — A4 landscape, tight margins */
+  @page { size: A4 landscape; margin: 8mm; }
 }
