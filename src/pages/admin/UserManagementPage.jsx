@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Users, UserPlus, Mail, Shield, CheckCircle2, XCircle, MoreVertical, Trash2, KeyRound } from 'lucide-react';
 
@@ -190,19 +191,16 @@ export default function UserManagementPage() {
       </div>
 
       {/* MODAL */}
-      {showModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999
-        }}>
-          <div className="card anim-fade-up" style={{ width: 440, padding: 0, overflow: 'hidden' }}>
-            <div className="card-header" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-              <h3 style={{ margin: 0 }}>{editingUserId ? 'Edit User' : 'Add New User'}</h3>
+      {showModal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h3>{editingUserId ? 'Edit User' : 'Add New User'}</h3>
               <button className="btn btn-ghost btn-icon" onClick={() => setShowModal(false)}>✕</button>
             </div>
             
-            <form onSubmit={handleSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="field">
                 <label>Full Name</label>
                 <input className="input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required autoFocus />
@@ -232,14 +230,16 @@ export default function UserManagementPage() {
                   <span style={{ fontWeight: 500 }}>Active Account</span>
                 </label>
               )}
+              </div>
 
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingUserId ? 'Save Changes' : 'Create User'}</button>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">{editingUserId ? 'Save Changes' : 'Create User'}</button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react';
 
@@ -60,7 +61,7 @@ export default function SubjectsPage() {
         })}
       </div>
 
-      {modal !== null && (
+      {modal !== null && createPortal(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
           <div className="modal">
             <div className="modal-header">
@@ -92,10 +93,11 @@ export default function SubjectsPage() {
               <button className="btn btn-primary" onClick={save}>{modal==='add'?'Add Subject':'Save'}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {confirmDel && (
+      {confirmDel && createPortal(
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth:380 }}>
             <div className="modal-header"><h3>Delete Subject?</h3></div>
@@ -105,7 +107,8 @@ export default function SubjectsPage() {
               <button className="btn btn-danger" onClick={()=>{dispatch({type:'DELETE_SUBJECT',payload:confirmDel.id});setConfirmDel(null);}}>Delete</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

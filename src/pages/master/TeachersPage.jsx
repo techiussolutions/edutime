@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, Users, Search } from 'lucide-react';
 
@@ -104,7 +105,7 @@ export default function TeachersPage() {
       </div>
 
       {/* Add/Edit Modal */}
-      {modal !== null && (
+      {modal !== null && createPortal(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
           <div className="modal modal-lg">
             <div className="modal-header">
@@ -150,11 +151,12 @@ export default function TeachersPage() {
               <button className="btn btn-primary" onClick={save}>{modal==='add'?'Add Teacher':'Save Changes'}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Confirm Delete */}
-      {confirmDel && (
+      {confirmDel && createPortal(
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth:400 }}>
             <div className="modal-header"><h3>Delete Teacher?</h3></div>
@@ -166,7 +168,8 @@ export default function TeachersPage() {
               <button className="btn btn-danger" onClick={()=>del(confirmDel.id)}>Delete</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

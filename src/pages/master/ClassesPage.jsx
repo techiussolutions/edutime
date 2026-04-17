@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
 
@@ -190,7 +191,7 @@ export default function ClassesPage() {
       ))}
 
       {/* ── ADD / EDIT MODAL ── */}
-      {modal !== null && (
+      {modal !== null && createPortal(
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(null)}>
           <div className="modal modal-lg" style={{ maxWidth: 660 }}>
             <div className="modal-header">
@@ -407,11 +408,12 @@ export default function ClassesPage() {
               }
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete confirmation */}
-      {confirmDel && (
+      {confirmDel && createPortal(
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 380 }}>
             <div className="modal-header"><h3>Delete {confirmDel.name}?</h3></div>
@@ -421,7 +423,8 @@ export default function ClassesPage() {
               <button className="btn btn-danger" onClick={() => { dispatch({ type: 'DELETE_CLASS', payload: confirmDel.id }); setConfirmDel(null); }}>Delete</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
