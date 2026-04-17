@@ -15,7 +15,8 @@ export default function TimetablePage() {
   const canEdit = can('editTimetable');
   const {
     settings, schedule, teachers, subjects, classes,
-    lockedSlots = [], classAssignments = [], teacherAvailability = {}
+    lockedSlots = [], classAssignments = [], teacherAvailability = {},
+    classPeriodSettings = {}
   } = state;
 
   const [viewMode,       setViewMode]       = useState('class');
@@ -25,6 +26,16 @@ export default function TimetablePage() {
   const [conflict,       setConflict]       = useState(null);
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
+
+  // Resolve effective period timings: class-specific if available, else global
+  const getEffectivePeriods = () => {
+    if (viewMode === 'class' && selectedClass) {
+      const custom = classPeriodSettings[selectedClass];
+      if (custom) return custom.periodTimings;
+    }
+    return settings.periodTimings;
+  };
+  const effectivePeriods = getEffectivePeriods();
 
   const slotId  = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
   const isLocked= (classId, dayKey, period) => lockedSlots.includes(slotId(classId, dayKey, period));
@@ -158,7 +169,7 @@ export default function TimetablePage() {
             <thead>
               <tr>
                 <th className="day-col">DAY</th>
-                {settings.periodTimings.map(p => (
+                {effectivePeriods.map(p => (
                   <th key={p.period}>
                     {p.label}{p.isBreak ? ' 🫖' : ''}
                     <br/><span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:'.72rem'}}>{p.start}–{p.end}</span>
@@ -170,7 +181,7 @@ export default function TimetablePage() {
               {activeDays.map(dayKey => (
                 <tr key={dayKey}>
                   <th className="day-col" style={{ fontWeight:600, fontSize:'.85rem', textAlign:'center' }}>{dayKey}</th>
-                  {settings.periodTimings.map(p => {
+                  {effectivePeriods.map(p => {
                     if (p.isBreak) return (
                       <td key={p.period} className="tt-cell break">
                         <div className="tt-slot"><span className="break-label">☕ {p.label}</span></div>

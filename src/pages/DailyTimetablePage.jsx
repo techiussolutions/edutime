@@ -7,7 +7,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function DailyTimetablePage() {
   const { state } = useApp();
-  const { settings, schedule, teachers, subjects, classes, substitutions = [], classAssignments = [] } = state;
+  const { settings, schedule, teachers, subjects, classes, substitutions = [], classAssignments = [], classPeriodSettings = {} } = state;
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [viewMode, setViewMode] = useState('class');
@@ -27,6 +27,15 @@ export default function DailyTimetablePage() {
     const dIdx = DAY_IDX[dayKey];
     return schedule.find(s => s.teacherId === teacherId && s.day === dIdx && s.period === period) || null;
   };
+
+  // Resolve effective period timings: class-specific if available, else global
+  const effectivePeriods = (() => {
+    if (viewMode === 'class' && selectedClass) {
+      const custom = classPeriodSettings[selectedClass];
+      if (custom) return custom.periodTimings;
+    }
+    return settings.periodTimings;
+  })();
 
   return (
     <div className="anim-fade-up">
@@ -69,7 +78,7 @@ export default function DailyTimetablePage() {
               <thead>
                 <tr>
                   <th className="day-col">PERIOD</th>
-                  {settings.periodTimings.map(p => (
+                  {effectivePeriods.map(p => (
                     <th key={p.period}>
                       {p.label}{p.isBreak ? ' 🫖' : ''}
                       <br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '.72rem' }}>{p.start}–{p.end}</span>
@@ -85,7 +94,7 @@ export default function DailyTimetablePage() {
                       {dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </div>
                   </th>
-                  {settings.periodTimings.map(p => {
+                  {effectivePeriods.map(p => {
                     if (p.isBreak) return (
                       <td key={p.period} className="tt-cell break">
                         <div className="tt-slot"><span className="break-label">☕ {p.label}</span></div>
