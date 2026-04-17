@@ -172,10 +172,7 @@ export default function SubstitutionPage() {
                               <div style={{ padding:'.75rem 1rem' }}>
                                 <div style={{ fontSize:'.78rem', fontWeight:600, color:'var(--tx-muted)', marginBottom:'.5rem' }}>SUGGESTED FREE TEACHERS</div>
                                 <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap' }}>
-                                  {suggestions.slice(0,5).map(sug => {
-                                    const matchLabel = sug.score >= 40 ? 'Best' : sug.score >= 20 ? 'Good' : 'OK';
-                                    const matchColor = sug.score >= 40 ? 'badge-green' : sug.score >= 20 ? 'badge-indigo' : 'badge-muted';
-                                    return (
+                                  {suggestions.slice(0,5).map(sug => (
                                     <button
                                       key={sug.teacher.id}
                                       className="btn btn-outline btn-sm"
@@ -184,10 +181,8 @@ export default function SubstitutionPage() {
                                       title={sug.reasons.join(' · ')}
                                     >
                                       {sug.teacher.name.split(' ')[0]}
-                                      <span className={`badge ${matchColor}`} style={{ fontSize:'.7rem', padding:'.1rem .35rem' }}>{matchLabel}</span>
                                     </button>
-                                    );
-                                  })}
+                                  ))}
                                 </div>
                                 {suggestions.length===0 && <p style={{ fontSize:'.82rem', color:'var(--clr-red)' }}>⚠ No free teachers available this period.</p>}
                               </div>
