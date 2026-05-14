@@ -75,7 +75,7 @@ export default function ClassesPage() {
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const save = () => {
-    const name = `${form.grade}th ${form.section}`;
+    const name = `${form.grade} - ${form.section}`;
     let classId;
     if (modal === 'add') {
       classId = `c_${Date.now()}`;
@@ -258,7 +258,7 @@ export default function ClassesPage() {
               {step === 2 && (
                 <div>
                   <p style={{ marginBottom: '1rem', fontSize: '.875rem', color: 'var(--tx-muted)' }}>
-                    Assign a teacher to each subject for <strong>{form.grade}th {form.section}</strong>.
+                    Assign a teacher to each subject for <strong>{form.grade} - {form.section}</strong>.
                   </p>
                   <div className="table-wrap">
                     <table>
