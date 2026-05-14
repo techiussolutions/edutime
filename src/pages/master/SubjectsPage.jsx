@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react';
 const GRADE_GROUPS = ['primary','middle','secondary','senior'];
 const EMPTY = { name:'', code:'', gradeGroups:[] };
 
+
 export default function SubjectsPage() {
   const { state, dispatch } = useApp();
   const [modal, setModal] = useState(null);

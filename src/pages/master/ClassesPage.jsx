@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
-import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2 } from 'lucide-react';
+
 
 const GRADE_GROUPS = [
   { id: 'primary',   label: 'Primary (1-5)' },
@@ -23,14 +24,17 @@ export default function ClassesPage() {
   const { state, dispatch } = useApp();
   const { subjects, teachers, classAssignments = [], classPeriodSettings = {}, settings } = state;
 
-  const [modal,          setModal]          = useState(null);  // null | 'add' | class-obj
-  const [step,           setStep]           = useState(1);     // 1-3
+  const [modal,          setModal]          = useState(null);
+  const [step,           setStep]           = useState(1);
   const [form,           setForm]           = useState(EMPTY_FORM);
   const [subjectTeachers,setSubjectTeachers]= useState({});
+  const [orGroups,       setOrGroups]       = useState([]); // [{label, subjectIds[]}]
+  const [newOrLabel,     setNewOrLabel]     = useState('');
   // Period schedule state
   const [useCustom,      setUseCustom]      = useState(false);
   const [customPeriods,  setCustomPeriods]  = useState([]);
   const [confirmDel,     setConfirmDel]     = useState(null);
+
 
   const applicableSubjects = useMemo(() =>
     subjects.filter(s =>
@@ -41,21 +45,27 @@ export default function ClassesPage() {
   const openAdd = () => {
     setForm({ ...EMPTY_FORM });
     setSubjectTeachers({});
+    setOrGroups([]);
+    setNewOrLabel('');
     setUseCustom(false);
     setCustomPeriods(defaultCustomPeriods(settings.periodTimings));
     setStep(1); setModal('add');
   };
+
 
   const openEdit = (cls) => {
     setForm({ ...cls });
     const existing = {};
     classAssignments.filter(a => a.classId === cls.id).forEach(a => { existing[a.subjectId] = a.teacherId; });
     setSubjectTeachers(existing);
+    setOrGroups((state.classOrGroups?.[cls.id] || []).map(g => ({ ...g, subjectIds: [...g.subjectIds] })));
+    setNewOrLabel('');
     const saved = classPeriodSettings[cls.id];
     setUseCustom(!!saved);
     setCustomPeriods(saved ? [...saved.periodTimings.map(p => ({...p}))] : defaultCustomPeriods(settings.periodTimings));
     setStep(1); setModal(cls);
   };
+
 
   // ── Period editor helpers ─────────────────────────────────────────────────
   const updatePeriodRow = (idx, key, val) => {
@@ -84,7 +94,6 @@ export default function ClassesPage() {
       classId = modal.id;
       dispatch({ type: 'UPDATE_CLASS', payload: { ...form, name } });
     }
-    // Save subject-teacher assignments
     dispatch({
       type: 'SET_CLASS_ASSIGNMENTS',
       payload: {
@@ -92,13 +101,13 @@ export default function ClassesPage() {
         assignments: applicableSubjects.map(sub => ({ subjectId: sub.id, teacherId: subjectTeachers[sub.id] || '' })),
       },
     });
-    // Save period schedule
-    dispatch({
-      type: 'SET_CLASS_PERIOD_SETTINGS',
-      payload: { classId, periodTimings: useCustom ? customPeriods : null },
-    });
+    dispatch({ type: 'SET_CLASS_PERIOD_SETTINGS', payload: { classId, periodTimings: useCustom ? customPeriods : null } });
+    // Save OR groups (filter out empty ones)
+    const validGroups = orGroups.filter(g => g.label.trim() && g.subjectIds.length >= 2);
+    dispatch({ type: 'SET_CLASS_OR_GROUPS', payload: { classId, groups: validGroups } });
     setModal(null);
   };
+
 
   // ── Grouped display ───────────────────────────────────────────────────────
   const grouped = GRADE_GROUPS
@@ -159,6 +168,17 @@ export default function ClassesPage() {
                     {periodSetting ? `Custom: ${nonBreakCount} periods/day` : `Default: ${nonBreakCount} periods/day`}
                   </div>
 
+                  {/* OR groups badge */}
+                  {(state.classOrGroups?.[cls.id]?.length > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.3rem', fontSize: '.74rem',
+                      color: '#7c3aed', background: '#f5f3ff', border: '1px solid #c4b5fd',
+                      borderRadius: 'var(--r-md)', padding: '.2rem .5rem', marginBottom: '.4rem', width: 'fit-content' }}>
+                      <Link2 size={10}/>
+                      {state.classOrGroups[cls.id].length} OR group{state.classOrGroups[cls.id].length > 1 ? 's' : ''}
+                      {' · '}{state.classOrGroups[cls.id].map(g => g.label).join(', ')}
+                    </div>
+                  )}
+
                   {/* Assignment summary */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem', fontSize: '.76rem',
                     color: assignments.length < totalSubjs ? 'var(--clr-amber)' : 'var(--clr-green)',
@@ -185,6 +205,7 @@ export default function ClassesPage() {
                   )}
                 </div>
               );
+
             })}
           </div>
         </div>
@@ -254,7 +275,7 @@ export default function ClassesPage() {
                 </div>
               )}
 
-              {/* ── STEP 2: Subject-Teacher Assignments ── */}
+              {/* ── STEP 2: Subject-Teacher Assignments + OR Groups ── */}
               {step === 2 && (
                 <div>
                   <p style={{ marginBottom: '1rem', fontSize: '.875rem', color: 'var(--tx-muted)' }}>
@@ -296,8 +317,86 @@ export default function ClassesPage() {
                   <div style={{ marginTop: '.75rem', fontSize: '.8rem', color: 'var(--tx-muted)' }}>
                     ✅ {Object.values(subjectTeachers).filter(Boolean).length} of {applicableSubjects.length} subjects assigned
                   </div>
+
+                  {/* ── OR Groups section ── */}
+                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.75rem' }}>
+                      <Link2 size={15} color="#7c3aed"/>
+                      <strong style={{ fontSize: '.875rem' }}>OR Subject Groups</strong>
+                      <span style={{ fontSize: '.78rem', color: 'var(--tx-muted)' }}>
+                        — subjects students choose between (scheduled simultaneously)
+                      </span>
+                    </div>
+
+                    {/* Existing OR groups */}
+                    {orGroups.map((grp, gi) => (
+                      <div key={gi} style={{ marginBottom: '.75rem', padding: '.75rem 1rem',
+                        borderRadius: 'var(--r-lg)', border: '1.5px solid #c4b5fd', background: '#faf5ff' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.5rem' }}>
+                          <input
+                            className="input" style={{ flex: 1, fontSize: '.82rem' }}
+                            placeholder="Group label (e.g. Language II, Elective A)"
+                            value={grp.label}
+                            onChange={e => setOrGroups(prev => prev.map((g, i) =>
+                              i === gi ? { ...g, label: e.target.value } : g
+                            ))}
+                          />
+                          <button className="btn btn-ghost btn-icon btn-sm"
+                            onClick={() => setOrGroups(prev => prev.filter((_, i) => i !== gi))}>
+                            <Trash2 size={13} color="var(--clr-red)"/>
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+                          {applicableSubjects.map(sub => {
+                            const checked = grp.subjectIds.includes(sub.id);
+                            const hasTeacher = !!subjectTeachers[sub.id];
+                            return (
+                              <label key={sub.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '.3rem', cursor: 'pointer',
+                                padding: '.25rem .6rem', borderRadius: 'var(--r-md)', fontSize: '.78rem',
+                                border: `1.5px solid ${checked ? '#7c3aed' : 'var(--border)'}`,
+                                background: checked ? '#ede9fe' : 'transparent',
+                              }}>
+                                <input type="checkbox" checked={checked}
+                                  onChange={e => setOrGroups(prev => prev.map((g, i) =>
+                                    i === gi
+                                      ? { ...g, subjectIds: e.target.checked
+                                          ? [...g.subjectIds, sub.id]
+                                          : g.subjectIds.filter(id => id !== sub.id) }
+                                      : g
+                                  ))}
+                                />
+                                <span style={{ fontWeight: 600 }}>{sub.code}</span>
+                                <span style={{ color: hasTeacher ? 'var(--tx-muted)' : 'var(--tx-xmuted)' }}>
+                                  {sub.name}{!hasTeacher ? ' (no teacher)' : ''}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {grp.subjectIds.length < 2 && (
+                          <div style={{ fontSize: '.72rem', color: '#7c3aed', marginTop: '.4rem' }}>
+                            ⚠️ Select at least 2 subjects to form a valid OR group.
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Add new group button */}
+                    <button className="btn btn-ghost btn-sm"
+                      style={{ color: '#7c3aed', border: '1px dashed #c4b5fd' }}
+                      onClick={() => setOrGroups(prev => [...prev, { label: '', subjectIds: [] }])}>
+                      <Plus size={13}/> Add OR Group
+                    </button>
+                    {orGroups.length === 0 && (
+                      <div style={{ fontSize: '.76rem', color: 'var(--tx-muted)', marginTop: '.5rem' }}>
+                        No OR groups yet. Add one if this class has elective subjects that run simultaneously.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
 
               {/* ── STEP 3: Period Schedule ── */}
               {step === 3 && (

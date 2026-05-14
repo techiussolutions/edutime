@@ -8,9 +8,9 @@ const AppContext = createContext();
 // ── DB SHAPE MAPPERS (from DB row → app shape) ──────────────
 const mapTeacherFromDb = (r)  => ({ id: r.id, name: r.name, department: r.department, subjects: r.subjects, maxPeriods: r.max_periods, phone: r.phone, email: r.email, designation: r.designation, joining: r.joining, active: r.active });
 const mapClassFromDb  = (r)   => ({ id: r.id, name: r.name, grade: r.grade, section: r.section, gradeGroup: r.grade_group, classTeacherId: r.class_teacher_id });
-const mapSubjectFromDb = (r)  => ({ id: r.id, name: r.name, code: r.code, gradeGroups: r.grade_groups });
+const mapSubjectFromDb = (r)  => ({ id: r.id, name: r.name, code: r.code, gradeGroups: r.grade_groups, orGroup: r.or_group || '' });
 const mapAssignFromDb = (r)   => ({ id: r.id, classId: r.class_id, subjectId: r.subject_id, teacherId: r.teacher_id });
-const mapSlotFromDb   = (r)   => ({ id: r.id, classId: r.class_id, day: r.day, period: r.period, teacherId: r.teacher_id, subjectId: r.subject_id });
+const mapSlotFromDb   = (r)   => ({ id: r.id, classId: r.class_id, day: r.day, period: r.period, teacherId: r.teacher_id, subjectId: r.subject_id, alternatives: r.alternatives || null });
 const mapAbsenceFromDb = (r)  => ({ id: r.id, teacherId: r.teacher_id, date: r.date, leaveType: r.leave_type, reason: r.reason });
 const mapSubFromDb    = (r)   => ({ id: r.id, date: r.date, day: r.day, period: r.period, scheduleId: r.schedule_id, absentTeacherId: r.absent_teacher_id, substituteTeacherId: r.substitute_teacher_id, assignedBy: r.assigned_by });
 
@@ -19,9 +19,11 @@ const mapSettingsFromDb = (r) => ({
   periodsConfig: r.periods_config || {},
   classPeriodSettings: r.class_period_settings || {},
   lockedSlots: r.locked_slots || [],
+  classOrGroups: r.class_or_groups || {},
 });
 
-const mapSettingsToDb = (settings, periodsConfig, classPeriodSettings, lockedSlots) => ({
+
+const mapSettingsToDb = (settings, periodsConfig, classPeriodSettings, lockedSlots, classOrGroups) => ({
   working_days: settings.workingDays,
   periods_per_day: settings.periodsPerDay,
   period_timings: settings.periodTimings,
@@ -34,7 +36,9 @@ const mapSettingsToDb = (settings, periodsConfig, classPeriodSettings, lockedSlo
   periods_config: periodsConfig || {},
   class_period_settings: classPeriodSettings || {},
   locked_slots: lockedSlots || [],
+  class_or_groups: classOrGroups || {},
 });
+
 
 // Rebuild teacherAvailability map from DB rows
 const buildAvailabilityMap = (rows) => {
@@ -102,12 +106,14 @@ const DEFAULT_STATE = {
   classAssignments: [],
   periodsConfig: {},
   classPeriodSettings: {},
+  classOrGroups: {},   // { [classId]: [{label, subjectIds}] }
   lockedSlots: [],
   absences: [],
   substitutions: [],
   notifications: [],
   teacherAvailability: {},
 };
+
 
 const buildInitial = () => DEFAULT_STATE;
 
@@ -188,9 +194,39 @@ function reducer(state, action) {
     case 'UPDATE_TEACHER':
       next = { ...state, teachers: state.teachers.map(t => t.id === action.payload.id ? { ...t, ...action.payload } : t) };
       break;
-    case 'DELETE_TEACHER':
-      next = { ...state, teachers: state.teachers.filter(t => t.id !== action.payload) };
+    case 'DELETE_TEACHER': {
+      const tid = action.payload;
+      // 1. Remove teacher from teacher list
+      // 2. Null-out their teacherId in classAssignments (subject stays, teacher unset)
+      // 3. Remove their schedule slots (only unlocked ones)
+      // 4. Remove from classOrGroups sibling lists (subjects without teacher can still be in a group)
+      // 5. Clear teacherAvailability for this teacher
+      // 6. Unset any class where they are classTeacher
+      next = {
+        ...state,
+        teachers: state.teachers.filter(t => t.id !== tid),
+        classes:  state.classes.map(c => c.classTeacherId === tid ? { ...c, classTeacherId: '' } : c),
+        classAssignments: state.classAssignments.map(a =>
+          a.teacherId === tid ? { ...a, teacherId: '' } : a
+        ),
+        schedule: state.schedule.filter(s =>
+          // Keep locked slots even if they reference this teacher (admin locked them)
+          state.lockedSlots.includes(s.id) ||
+          // Keep slots that don't involve this teacher at all
+          (s.teacherId !== tid && !(s.alternatives?.some(alt => alt.teacherId === tid)))
+        ).map(s => {
+          // For OR-group slots, strip the deleted teacher from alternatives
+          if (!s.alternatives) return s;
+          const newAlts = s.alternatives.filter(alt => alt.teacherId !== tid);
+          return { ...s, alternatives: newAlts.length >= 1 ? newAlts : s.alternatives };
+        }),
+        teacherAvailability: Object.fromEntries(
+          Object.entries(state.teacherAvailability || {}).filter(([k]) => k !== tid)
+        ),
+      };
       break;
+    }
+
 
     // Master data – Classes
     case 'ADD_CLASS':
@@ -199,28 +235,51 @@ function reducer(state, action) {
     case 'UPDATE_CLASS':
       next = { ...state, classes: state.classes.map(c => c.id === action.payload.id ? { ...c, ...action.payload } : c) };
       break;
-    case 'DELETE_CLASS':
+    case 'DELETE_CLASS': {
+      const dcId = action.payload;
+      // Cascade: assignments, periods config, period settings, OR groups, schedule slots
+      const newClassOrGroups = { ...(state.classOrGroups || {}) };
+      delete newClassOrGroups[dcId];
       next = {
         ...state,
-        classes: state.classes.filter(c => c.id !== action.payload),
-        classAssignments: state.classAssignments.filter(a => a.classId !== action.payload),
-        periodsConfig: Object.fromEntries(Object.entries(state.periodsConfig || {}).filter(([k]) => k !== action.payload)),
-        classPeriodSettings: Object.fromEntries(Object.entries(state.classPeriodSettings || {}).filter(([k]) => k !== action.payload)),
+        classes:            state.classes.filter(c => c.id !== dcId),
+        classAssignments:  state.classAssignments.filter(a => a.classId !== dcId),
+        periodsConfig:     Object.fromEntries(Object.entries(state.periodsConfig || {}).filter(([k]) => k !== dcId)),
+        classPeriodSettings: Object.fromEntries(Object.entries(state.classPeriodSettings || {}).filter(([k]) => k !== dcId)),
+        classOrGroups:     newClassOrGroups,
+        schedule:          state.schedule.filter(s => s.classId !== dcId),
+        lockedSlots:       state.lockedSlots.filter(sid => !sid.startsWith(`sch_${dcId}_`)),
       };
       break;
+    }
+
     // Class subject-teacher assignments
     case 'SET_CLASS_ASSIGNMENTS': {
       // action.payload = { classId, assignments: [{ subjectId, teacherId }] }
+      // Store ALL subject entries including those with no teacher yet so they
+      // remain visible in the wizard and can be assigned later.
       const { classId, assignments } = action.payload;
       const kept = state.classAssignments.filter(a => a.classId !== classId);
       const newOnes = assignments
-        .filter(a => a.teacherId) // skip unassigned
-        .map((a, i) => ({ id: `ca_${classId}_${a.subjectId}_${i}`, classId, subjectId: a.subjectId, teacherId: a.teacherId }));
+        .filter(a => a.subjectId) // only skip entries missing a subjectId entirely
+        .map((a, i) => ({ id: `ca_${classId}_${a.subjectId}_${i}`, classId, subjectId: a.subjectId, teacherId: a.teacherId || '' }));
       next = { ...state, classAssignments: [...kept, ...newOnes] };
       break;
     }
 
-    // Wizard periods-per-week config persistence
+    // Clear all unlocked schedule slots for a specific class
+    case 'CLEAR_CLASS_SCHEDULE': {
+      // action.payload = classId
+      const classId = action.payload;
+      next = {
+        ...state,
+        schedule: state.schedule.filter(s =>
+          s.classId !== classId || state.lockedSlots.includes(s.id)
+        ),
+      };
+      break;
+    }
+
     case 'SET_PERIODS_CONFIG':
       // action.payload = { [classId]: [{ subjectId, periodsPerWeek }] } (full map)
       next = { ...state, periodsConfig: action.payload };
@@ -239,27 +298,76 @@ function reducer(state, action) {
       next = { ...state, classPeriodSettings: updated };
       break;
     }
+
+    // Per-class OR subject groups
+    // action.payload = { classId, groups: [{label, subjectIds}] }
+    // groups=[] or null clears all OR groups for that class
+    case 'SET_CLASS_OR_GROUPS': {
+      const { classId: cogCid, groups } = action.payload;
+      const cogMap = { ...(state.classOrGroups || {}) };
+      if (!groups || groups.length === 0) {
+        delete cogMap[cogCid];
+      } else {
+        cogMap[cogCid] = groups;
+      }
+      next = { ...state, classOrGroups: cogMap };
+      break;
+    }
+
     case 'ADD_SUBJECT':
       next = { ...state, subjects: [...state.subjects, action.payload] };
       break;
     case 'UPDATE_SUBJECT':
       next = { ...state, subjects: state.subjects.map(s => s.id === action.payload.id ? { ...s, ...action.payload } : s) };
       break;
-    case 'DELETE_SUBJECT':
-      next = { ...state, subjects: state.subjects.filter(s => s.id !== action.payload) };
+    case 'DELETE_SUBJECT': {
+      const dsId = action.payload;
+      // 1. Remove subject from subjects list
+      // 2. Remove classAssignments rows referencing this subject
+      // 3. Remove schedule slots referencing this subject (unlocked only)
+      // 4. Remove from periodsConfig (all classes)
+      // 5. Remove from classOrGroups — prune from subjectIds; remove group if < 2 remain
+      const newPeriodsConfig = {};
+      Object.entries(state.periodsConfig || {}).forEach(([classId, arr]) => {
+        const filtered = arr.filter(r => r.subjectId !== dsId);
+        if (filtered.length > 0) newPeriodsConfig[classId] = filtered;
+      });
+      const newClassOrGroups2 = {};
+      Object.entries(state.classOrGroups || {}).forEach(([classId, groups]) => {
+        const prunedGroups = groups
+          .map(g => ({ ...g, subjectIds: g.subjectIds.filter(sid => sid !== dsId) }))
+          .filter(g => g.subjectIds.length >= 2); // a group needs ≥2 subjects
+        if (prunedGroups.length > 0) newClassOrGroups2[classId] = prunedGroups;
+      });
+      next = {
+        ...state,
+        subjects: state.subjects.filter(s => s.id !== dsId),
+        classAssignments: state.classAssignments.filter(a => a.subjectId !== dsId),
+        schedule: state.schedule.filter(s =>
+          state.lockedSlots.includes(s.id) ||
+          (s.subjectId !== dsId && !(s.alternatives?.some(alt => alt.subjectId === dsId)))
+        ),
+        periodsConfig: newPeriodsConfig,
+        classOrGroups: newClassOrGroups2,
+      };
       break;
+    }
+
 
     // Schedule
-    case 'ASSIGN_SLOT':
-      const { classId, day, period, teacherId, subjectId } = action.payload;
+    case 'ASSIGN_SLOT': {
+      const { classId, day, period, teacherId, subjectId, alternatives } = action.payload;
       const slotId = `sch_${classId}_${day}_${period}`;
       const existing = state.schedule.find(s => s.id === slotId);
+      const newSlot = { id: slotId, classId, day, period, teacherId, subjectId,
+        alternatives: alternatives || null };
       if (existing) {
-        next = { ...state, schedule: state.schedule.map(s => s.id === slotId ? { ...s, teacherId, subjectId } : s) };
+        next = { ...state, schedule: state.schedule.map(s => s.id === slotId ? newSlot : s) };
       } else {
-        next = { ...state, schedule: [...state.schedule, { id: slotId, classId, day, period, teacherId, subjectId }] };
+        next = { ...state, schedule: [...state.schedule, newSlot] };
       }
       break;
+    }
     case 'CLEAR_SLOT':
       next = { ...state, schedule: state.schedule.filter(s => s.id !== action.payload) };
       break;
@@ -364,13 +472,14 @@ export function AppProvider({ children }) {
     clearTimeout(settingsSyncTimer.current);
     settingsSyncTimer.current = setTimeout(() => {
       syncAction('SYNC_SETTINGS', schoolId,
-        mapSettingsToDb(state.settings, state.periodsConfig, state.classPeriodSettings, state.lockedSlots)
+        mapSettingsToDb(state.settings, state.periodsConfig, state.classPeriodSettings, state.lockedSlots, state.classOrGroups)
       ).catch(err => {
         console.error('[AppStore] Settings sync failed:', err.message);
       });
     }, 800);
     return () => clearTimeout(settingsSyncTimer.current);
-  }, [schoolId, dbLoaded, state.settings, state.periodsConfig, state.classPeriodSettings, state.lockedSlots]);
+  }, [schoolId, dbLoaded, state.settings, state.periodsConfig, state.classPeriodSettings, state.lockedSlots, state.classOrGroups]);
+
 
   // ── Wrapped dispatch: local + Neon API ────────────────────
   const dbDispatch = useCallback((action) => {

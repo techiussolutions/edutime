@@ -29,10 +29,9 @@ function shuffle(arr) {
 }
 
 export function generateTimetable(state, requirements) {
-  const { teachers, classes, subjects, settings, classAssignments = [], classPeriodSettings = {}, teacherAvailability = {} } = state;
+  const { teachers, classes, subjects, settings, classAssignments = [], classPeriodSettings = {}, teacherAvailability = {}, classOrGroups = {} } = state;
   const { classSubjectMap, selectedClassIds } = requirements;
 
-  // If selectedClassIds provided, only generate for those classes
   const targetClasses = selectedClassIds
     ? classes.filter(c => selectedClassIds.includes(c.id))
     : classes;
@@ -40,34 +39,63 @@ export function generateTimetable(state, requirements) {
   const activeDayKeys = Object.entries(settings.workingDays)
     .filter(([, v]) => v).map(([k]) => k);
 
-  // Resolve effective period timings per class (custom or global)
   const getClassPeriods = (classId) => {
     const custom = classPeriodSettings[classId];
     return custom ? custom.periodTimings : settings.periodTimings;
   };
 
-  // Global non-break periods (used only as fallback reference)
   const globalNonBreak = settings.periodTimings
     .filter(p => !p.isBreak).map(p => p.period);
 
-
-  // Fast lookup: classId__subjectId → teacherId
   const assignmentMap = {};
   classAssignments.forEach(a => {
     assignmentMap[`${a.classId}__${a.subjectId}`] = a.teacherId;
   });
 
+  // ── OR Group index (per-class config) ────────────────────────────────────
+  // Built from classOrGroups: { classId: [{label, subjectIds}] }
+  // Key: `${classId}__${label}` → [{subjectId, teacherId}]
+  const orGroupIndex = {};
+  // Also build a reverse map: subjectId → label (within a classId)
+  // so we can tag demands with their group membership.
+  const subjectOrGroupLabel = {}; // `${classId}__${subjectId}` → label
+
+  targetClasses.forEach(cls => {
+    const groups = classOrGroups[cls.id] || [];
+    groups.forEach(grp => {
+      if (!grp.label || grp.subjectIds.length < 2) return;
+      const key = `${cls.id}__${grp.label}`;
+      orGroupIndex[key] = grp.subjectIds.map(sid => {
+        const teacherId = assignmentMap[`${cls.id}__${sid}`];
+        return { subjectId: sid, teacherId: teacherId || '' };
+      }).filter(x => x.teacherId); // only include subjects that have a teacher
+      grp.subjectIds.forEach(sid => {
+        subjectOrGroupLabel[`${cls.id}__${sid}`] = grp.label;
+      });
+    });
+  });
+
   // ── Step 1: Build demand list ─────────────────────────────────────────────
-  // Each demand = { classId, subjectId, teacherId, remaining }
+  // OR-group siblings share the same slot — only the FIRST sibling in a group
+  // is added as a demand (it drags its siblings along when scheduled).
+  const orGroupLeaders = new Set(); // `${classId}__${label}` already-added
   const demands = [];
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
       const teacherId = assignmentMap[`${cls.id}__${req.subjectId}`];
-      if (!teacherId) return; // no assignment — will warn later
-      demands.push({ classId: cls.id, subjectId: req.subjectId, teacherId, remaining: req.periodsPerWeek });
+      if (!teacherId) return;
+      const orGroup = subjectOrGroupLabel[`${cls.id}__${req.subjectId}`] || '';
+      if (orGroup) {
+        const key = `${cls.id}__${orGroup}`;
+        if (orGroupLeaders.has(key)) return; // siblings handled by leader
+        orGroupLeaders.add(key);
+      }
+      demands.push({ classId: cls.id, subjectId: req.subjectId, teacherId,
+        remaining: req.periodsPerWeek, orGroup });
     });
   });
+
 
   // Track unassigned subjects (will warn at the end)
   const unassigned = [];
@@ -140,15 +168,57 @@ export function generateTimetable(state, requirements) {
       const teacher = teachers.find(t => t.id === demand.teacherId);
       if (teacher && (teacherLoad[demand.teacherId] || 0) >= teacher.maxPeriods) continue;
 
+      // ── Resolve OR-group siblings ────────────────────────────────────────
+      // If this demand belongs to an OR group, collect all other siblings that
+      // also have remaining periods and whose teachers are free this slot.
+      let alternatives = null;
+      if (demand.orGroup) {
+        const key = `${demand.classId}__${demand.orGroup}`;
+        const siblings = orGroupIndex[key] || [];
+        const allSiblingAlts = siblings.map(sib => {
+          // Check sibling teacher is free
+          const sibTeacherFree =
+            !teacherBusy.has(`${sib.teacherId}_${dayIdx}_${period}`) &&
+            !usedTeachersThisSlot.has(sib.teacherId) &&
+            teacherAvailability?.[sib.teacherId]?.[dayKey]?.[period] !== false;
+          return { ...sib, free: sibTeacherFree };
+        });
+        // All siblings must be free (they always travel together)
+        const allFree = allSiblingAlts.every(s => s.free);
+        if (!allFree) continue; // can't place this OR group here — skip slot
+        alternatives = allSiblingAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId }));
+      }
+
       // ✅ Assign
       const slotId = `sch_${demand.classId}_${dayIdx}_${period}`;
-      schedule.push({ id: slotId, classId: demand.classId, day: dayIdx, period, teacherId: demand.teacherId, subjectId: demand.subjectId });
+      schedule.push({
+        id: slotId,
+        classId: demand.classId, day: dayIdx, period,
+        teacherId: demand.teacherId, subjectId: demand.subjectId,
+        alternatives,
+      });
       teacherBusy.add(`${demand.teacherId}_${dayIdx}_${period}`);
       classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
       usedTeachersThisSlot.add(demand.teacherId);
       usedClassesThisSlot.add(demand.classId);
       teacherLoad[demand.teacherId] = (teacherLoad[demand.teacherId] || 0) + 1;
       demand.remaining--;
+
+      // Also mark sibling teachers busy and reduce their demand remaining
+      if (demand.orGroup && alternatives) {
+        for (const sib of alternatives) {
+          if (sib.teacherId === demand.teacherId) continue; // already handled
+          teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+          usedTeachersThisSlot.add(sib.teacherId);
+          teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+          // Find and decrement the sibling demand (it won't be scheduled separately)
+          const sibDemand = demands.find(
+            d => d.classId === demand.classId && d.subjectId === sib.subjectId
+          );
+          // Sibling may not have its own demand entry (leader-only model) — that's fine
+          if (sibDemand) sibDemand.remaining--;
+        }
+      }
     }
   }
 

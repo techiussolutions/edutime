@@ -26,6 +26,27 @@ export default function WizardPage() {
   const activeDayKeys = Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => { const o = {Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5}; return o[a]-o[b]; });
   const nonBreakPeriods = settings.periodTimings.filter(p => !p.isBreak);
 
+  /**
+   * Merges any subjects present in classAssignments but missing from the
+   * given map (e.g. subjects added after the previous timetable run).
+   * New entries get periodsPerWeek = 0 so the user can set them explicitly.
+   */
+  const mergeNewSubjects = (map, clsList, assignments) => {
+    const merged = {};
+    clsList.forEach(cls => {
+      const existing = map[cls.id] || [];
+      const existingIds = new Set(existing.map(r => r.subjectId));
+      const assignedSubjectIds = assignments
+        .filter(a => a.classId === cls.id && a.subjectId)
+        .map(a => a.subjectId);
+      const newEntries = assignedSubjectIds
+        .filter(sid => !existingIds.has(sid))
+        .map(sid => ({ subjectId: sid, periodsPerWeek: 0 }));
+      merged[cls.id] = newEntries.length > 0 ? [...existing, ...newEntries] : existing;
+    });
+    return merged;
+  };
+
   // Per-class helper: resolve the effective period timings for a class
   const getClassPeriods = (classId) => {
     const custom = classPeriodSettings[classId];
@@ -37,8 +58,11 @@ export default function WizardPage() {
   const [selectedClass, setSelectedClass] = useState(classes[0]?.id ?? '');
   const [previewClass, setPreviewClass] = useState(classes[0]?.id ?? '');
   const [classSubjectMap, setClassSubjectMap] = useState(() => {
-    // Restore from persisted periodsConfig if available, else compute default
-    if (periodsConfig && Object.keys(periodsConfig).length > 0) return periodsConfig;
+    // Restore from persisted periodsConfig if available, else compute default.
+    // Always merge in any subjects added after the last generation.
+    if (periodsConfig && Object.keys(periodsConfig).length > 0) {
+      return mergeNewSubjects(periodsConfig, classes, classAssignments);
+    }
     return getDefaultRequirements(classes, subjects, activeDayCount, classAssignments);
   });
   const [generated, setGenerated] = useState(null);
@@ -54,11 +78,16 @@ export default function WizardPage() {
     setSelectedClass(prev => prev || classes[0]?.id || '');
     setPreviewClass(prev => prev || classes[0]?.id || '');
     setSelectedClassIds(classes.map(c => c.id));
-    // Recompute classSubjectMap from periodsConfig or defaults
+    // Recompute classSubjectMap from periodsConfig or defaults.
+    // Merge in any subjects that were added after the last generation run.
     setClassSubjectMap(prev => {
-      if (periodsConfig && Object.keys(periodsConfig).length > 0) return periodsConfig;
+      if (periodsConfig && Object.keys(periodsConfig).length > 0) {
+        return mergeNewSubjects(periodsConfig, classes, classAssignments);
+      }
       // Only recompute if current map is empty (avoid overwriting user edits)
-      if (Object.keys(prev).length > 0) return prev;
+      if (Object.keys(prev).length > 0) {
+        return mergeNewSubjects(prev, classes, classAssignments);
+      }
       return getDefaultRequirements(classes, subjects, activeDayCount, classAssignments);
     });
   }, [dbLoaded, classes.length, subjects.length, classAssignments.length]);
@@ -233,14 +262,23 @@ export default function WizardPage() {
               ))}
             </div>
 
-            {selectedClass && (
+            {selectedClass && (() => {
+              const classNonBreakPeriods = getClassPeriods(selectedClass).filter(p => !p.isBreak);
+              const classAvailSlots = classNonBreakPeriods.length * activeDayCount;
+              const classPeriodInfo = classPeriodSettings[selectedClass]
+                ? `Custom: ${classNonBreakPeriods.length} periods/day`
+                : `Default: ${classNonBreakPeriods.length} periods/day`;
+              return (
               <div className="card" style={{ marginTop: '.75rem' }}>
                 <div className="card-header">
                   <div>
                     <h3 style={{ fontSize: '.95rem' }}>{classes.find(c => c.id === selectedClass)?.name} — Periods per Week</h3>
                   </div>
-                  <div style={{ fontSize: '.8rem', color: 'var(--tx-muted)' }}>
-                    <strong>{nonBreakPeriods.length * activeDayCount}</strong> total slots/week ({activeDayCount} days × {nonBreakPeriods.length} periods)
+                  <div style={{ fontSize: '.8rem', color: 'var(--tx-muted)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <span><strong>{classAvailSlots}</strong> total slots/week ({activeDayCount} days × {classNonBreakPeriods.length} periods)</span>
+                    {classPeriodSettings[selectedClass] && (
+                      <span style={{ fontSize: '.72rem', background: 'var(--clr-primary-l)', color: 'var(--clr-primary)', padding: '.15rem .45rem', borderRadius: 'var(--r-md)', border: '1px solid var(--clr-primary)' }}>Custom schedule</span>
+                    )}
                   </div>
                 </div>
                 <div className="table-wrap">
@@ -256,7 +294,7 @@ export default function WizardPage() {
                       {(classSubjectMap[selectedClass] || []).map(req => {
                         const sub = subjects.find(s => s.id === req.subjectId);
                         const totalReq = (classSubjectMap[selectedClass] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
-                        const over = totalReq > nonBreakPeriods.length * activeDayCount;
+                        const over = totalReq > classAvailSlots;
                         return (
                           <tr key={req.subjectId}>
                             <td>
@@ -295,7 +333,7 @@ export default function WizardPage() {
                 <div style={{ padding: '.625rem 1.25rem', borderTop: '1px solid var(--border)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'flex-end', gap: '2rem', fontSize: '.82rem' }}>
                   {(() => {
                     const req = (classSubjectMap[selectedClass] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
-                    const avail = nonBreakPeriods.length * activeDayCount;
+                    const avail = classAvailSlots;
                     return (
                       <>
                         <span>Requested: <strong style={{ color: req > avail ? 'var(--clr-red)' : req === avail ? 'var(--clr-green)' : undefined }}>{req}</strong></span>
@@ -306,7 +344,8 @@ export default function WizardPage() {
                   })()}
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -332,28 +371,45 @@ export default function WizardPage() {
                   All Classes
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer', fontSize: '.84rem' }}>
-                  <input type="radio" name="genMode" checked={genMode === 'selected'} onChange={() => setGenMode('selected')} />
+                  <input type="radio" name="genMode" checked={genMode === 'selected'} onChange={() => { setGenMode('selected'); setSelectedClassIds([]); }} />
                   Selected Classes Only
                 </label>
               </div>
               {genMode === 'selected' && (
-                <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-                  {classes.map(cls => (
-                    <label key={cls.id} style={{
-                      display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer',
-                      padding: '.35rem .75rem', borderRadius: 'var(--r-lg)', fontSize: '.82rem',
-                      border: `1.5px solid ${selectedClassIds.includes(cls.id) ? 'var(--clr-primary)' : 'var(--border)'}`,
-                      background: selectedClassIds.includes(cls.id) ? 'var(--clr-primary-l)' : 'transparent',
-                    }}>
-                      <input type="checkbox" checked={selectedClassIds.includes(cls.id)}
-                        onChange={e => {
-                          setSelectedClassIds(prev =>
-                            e.target.checked ? [...prev, cls.id] : prev.filter(id => id !== cls.id)
-                          );
-                        }} />
-                      {cls.name}
-                    </label>
-                  ))}
+                <div>
+                  {/* Bulk action buttons */}
+                  <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.625rem' }}>
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '.75rem', padding: '.2rem .6rem' }}
+                      onClick={() => setSelectedClassIds(classes.map(c => c.id))}>
+                      ✓ Select All
+                    </button>
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '.75rem', padding: '.2rem .6rem' }}
+                      onClick={() => setSelectedClassIds([])}>
+                      ✕ Deselect All
+                    </button>
+                    <span style={{ fontSize: '.75rem', color: 'var(--tx-muted)' }}>
+                      {selectedClassIds.length} of {classes.length} selected
+                    </span>
+                  </div>
+                  {/* Class chips */}
+                  <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                    {classes.map(cls => (
+                      <label key={cls.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer',
+                        padding: '.35rem .75rem', borderRadius: 'var(--r-lg)', fontSize: '.82rem',
+                        border: `1.5px solid ${selectedClassIds.includes(cls.id) ? 'var(--clr-primary)' : 'var(--border)'}`,
+                        background: selectedClassIds.includes(cls.id) ? 'var(--clr-primary-l)' : 'transparent',
+                      }}>
+                        <input type="checkbox" checked={selectedClassIds.includes(cls.id)}
+                          onChange={e => {
+                            setSelectedClassIds(prev =>
+                              e.target.checked ? [...prev, cls.id] : prev.filter(id => id !== cls.id)
+                            );
+                          }} />
+                        {cls.name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -473,51 +529,56 @@ export default function WizardPage() {
 
             <div className="card">
               <div style={{ overflowX: 'auto' }}>
-                <table className="tt-table" style={{ fontSize: '.8rem' }}>
-                  <thead>
-                    <tr>
-                      <th className="day-col">Day</th>
-                      {settings.periodTimings.map(p => (
-                        <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{p.start}</span></th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeDayKeys.map(dayKey => {
-                      const dayIdx = DAY_IDX[dayKey];
-                      return (
-                        <tr key={dayKey}>
-                          <th className="day-col" style={{ textAlign: 'center', fontSize: '.8rem' }}>{dayKey}</th>
-                          {settings.periodTimings.map(p => {
-                            if (p.isBreak) return (
-                              <td key={p.period} className="tt-cell break"><span style={{ fontSize: '.7rem', fontStyle: 'italic', color: 'var(--tx-muted)' }}>Break</span></td>
-                            );
-                            const locked = lockedSlots.includes(slotId(previewClass, dayKey, p.period));
-                            const data = !locked
-                              ? getCellData(generated.schedule, previewClass, dayKey, p.period)
-                              : getCellData(schedule, previewClass, dayKey, p.period);
-                            return (
-                              <td key={p.period} className={`tt-cell${data ? ' assigned' : ''}`} style={{ background: locked ? '#fffbeb' : undefined, position: 'relative' }}>
-                                {locked && (
-                                  <div style={{ position: 'absolute', top: 3, right: 3 }}>
-                                    <Lock size={9} color="#d97706" />
-                                  </div>
-                                )}
-                                {data ? (
-                                  <div className="tt-slot">
-                                    <span className="sub" style={{ fontSize: '.76rem' }}>{data.subject?.code}</span>
-                                    <span className="teacher" style={{ fontSize: '.68rem' }}>{data.teacher?.name?.split(' ')[0]}</span>
-                                    {locked && <span style={{ fontSize: '.62rem', color: '#d97706' }}>locked</span>}
-                                  </div>
-                                ) : <span style={{ fontSize: '.7rem', color: 'var(--tx-xmuted)' }}>—</span>}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                {(() => {
+                  const previewPeriods = getClassPeriods(previewClass);
+                  return (
+                  <table className="tt-table" style={{ fontSize: '.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th className="day-col">Day</th>
+                        {previewPeriods.map(p => (
+                          <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{p.start}</span></th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeDayKeys.map(dayKey => {
+                        const dayIdx = DAY_IDX[dayKey];
+                        return (
+                          <tr key={dayKey}>
+                            <th className="day-col" style={{ textAlign: 'center', fontSize: '.8rem' }}>{dayKey}</th>
+                            {previewPeriods.map(p => {
+                              if (p.isBreak) return (
+                                <td key={p.period} className="tt-cell break"><span style={{ fontSize: '.7rem', fontStyle: 'italic', color: 'var(--tx-muted)' }}>Break</span></td>
+                              );
+                              const locked = lockedSlots.includes(slotId(previewClass, dayKey, p.period));
+                              const data = !locked
+                                ? getCellData(generated.schedule, previewClass, dayKey, p.period)
+                                : getCellData(schedule, previewClass, dayKey, p.period);
+                              return (
+                                <td key={p.period} className={`tt-cell${data ? ' assigned' : ''}`} style={{ background: locked ? '#fffbeb' : undefined, position: 'relative' }}>
+                                  {locked && (
+                                    <div style={{ position: 'absolute', top: 3, right: 3 }}>
+                                      <Lock size={9} color="#d97706" />
+                                    </div>
+                                  )}
+                                  {data ? (
+                                    <div className="tt-slot">
+                                      <span className="sub" style={{ fontSize: '.76rem' }}>{data.subject?.code}</span>
+                                      <span className="teacher" style={{ fontSize: '.68rem' }}>{data.teacher?.name?.split(' ')[0]}</span>
+                                      {locked && <span style={{ fontSize: '.62rem', color: '#d97706' }}>locked</span>}
+                                    </div>
+                                  ) : <span style={{ fontSize: '.7rem', color: 'var(--tx-xmuted)' }}>—</span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  );
+                })()}
               </div>
             </div>
 

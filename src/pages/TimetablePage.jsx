@@ -3,7 +3,8 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
-import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2 } from 'lucide-react';
+
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
 const DAY_IDX  = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
@@ -25,7 +26,10 @@ export default function TimetablePage() {
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [printClassIds,  setPrintClassIds]  = useState([]);
+  const [printClassIds,   setPrintClassIds]   = useState([]);
+  const [printTeacherIds, setPrintTeacherIds] = useState([]);
+  const [clearConfirmClass, setClearConfirmClass] = useState(false);
+
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
 
@@ -39,7 +43,11 @@ export default function TimetablePage() {
     return schedule.find(s => s.classId===classId && s.day===dIdx && s.period===period) || null;
   };
   const openPrintModal = () => {
-    setPrintClassIds(classes.map(c => c.id));
+    if (viewMode === 'teacher') {
+      setPrintTeacherIds(teachers.map(t => t.id));
+    } else {
+      setPrintClassIds(classes.map(c => c.id));
+    }
     setShowPrintModal(true);
   };
   const togglePrintClass = (id) => {
@@ -48,10 +56,29 @@ export default function TimetablePage() {
   const toggleAllPrint = () => {
     setPrintClassIds(prev => prev.length === classes.length ? [] : classes.map(c => c.id));
   };
+  const togglePrintTeacher = (id) => {
+    setPrintTeacherIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleAllPrintTeachers = () => {
+    setPrintTeacherIds(prev => prev.length === teachers.length ? [] : teachers.map(t => t.id));
+  };
+  // Get the union of all period timings a teacher teaches across their classes
+  const getPeriodsForTeacher = (teacherId) => {
+    const teacherClassIds = [...new Set(
+      schedule.filter(s => s.teacherId === teacherId).map(s => s.classId)
+    )];
+    let longest = settings.periodTimings;
+    for (const cid of teacherClassIds) {
+      const custom = classPeriodSettings[cid];
+      if (custom && custom.periodTimings.length > longest.length) longest = custom.periodTimings;
+    }
+    return longest;
+  };
   const doPrint = () => {
     setShowPrintModal(false);
     setTimeout(() => window.print(), 100);
   };
+
 
   // Resolve effective period timings: class-specific if available, else global
   // For teacher view, use the longest period list across all classes they teach
@@ -184,16 +211,30 @@ export default function TimetablePage() {
       </div>
 
       {/* Controls */}
-      <div className="card card-body" style={{ marginBottom:'1rem', display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
+      <div className="card card-body" style={{ marginBottom: clearConfirmClass ? '.5rem' : '1rem', display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
         <div className="tabs" style={{ margin:0, borderBottom:'none' }}>
           <button className={`tab-btn ${viewMode==='class'?'active':''}`} onClick={()=>setViewMode('class')}>Class View</button>
           <button className={`tab-btn ${viewMode==='teacher'?'active':''}`} onClick={()=>setViewMode('teacher')}>Teacher View</button>
         </div>
         <div style={{ flex:1 }}/>
         {viewMode==='class'
-          ? <select className="input" style={{width:200}} value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>
-              {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          ? (
+            <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
+              <select className="input" style={{width:200}} value={selectedClass} onChange={e=>{setSelectedClass(e.target.value); setClearConfirmClass(false);}}>
+                {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {canEdit && schedule.some(s => s.classId === selectedClass && !lockedSlots.includes(s.id)) && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--clr-red)', border: '1px solid var(--clr-red)', gap: '.3rem', whiteSpace: 'nowrap' }}
+                  onClick={() => setClearConfirmClass(v => !v)}
+                  title="Clear all unlocked slots for this class"
+                >
+                  <Trash2 size={13}/> Clear Class
+                </button>
+              )}
+            </div>
+          )
           : <select className="input" style={{width:200}} value={selectedTeacher} onChange={e=>setSelectedTeacher(e.target.value)}>
               {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
@@ -204,6 +245,43 @@ export default function TimetablePage() {
           <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'var(--bg-muted)', border:'1px solid var(--border)', marginRight:4 }}/>Break</span>
         </div>
       </div>
+
+      {/* Clear confirmation banner */}
+      {clearConfirmClass && viewMode === 'class' && (() => {
+        const cls = classes.find(c => c.id === selectedClass);
+        const classSlots = schedule.filter(s => s.classId === selectedClass);
+        const unlocked = classSlots.filter(s => !lockedSlots.includes(s.id));
+        const locked   = classSlots.filter(s =>  lockedSlots.includes(s.id));
+        return (
+          <div style={{
+            marginBottom: '1rem', padding: '.875rem 1.25rem',
+            borderRadius: 'var(--r-lg)', border: '1.5px solid var(--clr-red)',
+            background: '#fef2f2', display: 'flex', alignItems: 'center',
+            gap: '1rem', flexWrap: 'wrap',
+          }}>
+            <Trash2 size={16} color="var(--clr-red)" style={{ flexShrink: 0 }}/>
+            <div style={{ flex: 1, fontSize: '.85rem' }}>
+              <strong style={{ color: 'var(--clr-red)' }}>Clear {cls?.name} timetable?</strong>
+              <span style={{ color: '#991b1b', marginLeft: '.5rem' }}>
+                {unlocked.length} unlocked slot{unlocked.length !== 1 ? 's' : ''} will be removed
+                {locked.length > 0 ? ` · ${locked.length} locked slot${locked.length !== 1 ? 's' : ''} kept` : ''}.
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '.5rem' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setClearConfirmClass(false)}>Cancel</button>
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={() => {
+                  dispatch({ type: 'CLEAR_CLASS_SCHEDULE', payload: selectedClass });
+                  setClearConfirmClass(false);
+                }}
+              >
+                <Trash2 size={13}/> Yes, Clear
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Print header — only visible when printing */}
       <div className="print-header">
@@ -246,10 +324,20 @@ export default function TimetablePage() {
                     const slot = viewMode==='class'
                       ? getCellData(selectedClass, dayKey, p.period)
                       : getTeacherCell(selectedTeacher, dayKey, p.period);
-                    const teacher = slot ? teachers.find(t=>t.id===slot.teacherId) : null;
-                    const subject = slot ? subjects.find(s=>s.id===slot.subjectId) : null;
-                    const cls = slot && viewMode==='teacher' ? classes.find(c=>c.id===slot.classId) : null;
                     const locked = viewMode==='class' && isLocked(selectedClass, dayKey, p.period);
+                    // OR-group: slot has alternatives array
+                    const isOrGroup = slot?.alternatives && slot.alternatives.length > 1;
+
+                    // Resolve display items: either alternatives array or single subject
+                    const displayItems = isOrGroup
+                      ? slot.alternatives.map(alt => ({
+                          sub: subjects.find(s => s.id === alt.subjectId),
+                          teacher: teachers.find(t => t.id === alt.teacherId),
+                        }))
+                      : slot
+                        ? [{ sub: subjects.find(s=>s.id===slot.subjectId), teacher: teachers.find(t=>t.id===slot.teacherId) }]
+                        : [];
+                    const cls = slot && viewMode==='teacher' ? classes.find(c=>c.id===slot.classId) : null;
 
                     return (
                       <td
@@ -257,13 +345,14 @@ export default function TimetablePage() {
                         className={`tt-cell${slot ? ' assigned' : ''}`}
                         style={{
                           cursor: canEdit && viewMode==='class' && !locked ? 'pointer' : 'default',
-                          background: locked ? '#fffbeb' : undefined,
+                          background: locked ? '#fffbeb' : isOrGroup ? '#faf5ff' : undefined,
                           position: 'relative',
+                          borderLeft: isOrGroup ? '2.5px solid #a78bfa' : undefined,
                         }}
                         onClick={() => canEdit && viewMode==='class' && openEdit(selectedClass, dayKey, p.period)}
                         title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
                       >
-                        {/* Lock icon — always visible (dimmed when unlocked, bright when locked) */}
+                        {/* Lock icon */}
                         {viewMode === 'class' && (
                           <button
                             style={{
@@ -282,12 +371,33 @@ export default function TimetablePage() {
                           </button>
                         )}
                         <div className="tt-slot">
-                          {slot ? (
-                            <>
-                              <span className="sub">{subject?.code}</span>
-                              <span className="teacher">{teacher?.name?.split(' ')[0] ?? '—'}</span>
-                              {cls && <span className="cls">{cls.name}</span>}
-                            </>
+                          {displayItems.length > 0 ? (
+                            isOrGroup ? (
+                              // OR-group: stacked display
+                              <div style={{ display:'flex', flexDirection:'column', gap:1, width:'100%' }}>
+                                {displayItems.map((item, i) => (
+                                  <div key={i} style={{
+                                    display:'flex', alignItems:'center', gap:3,
+                                    paddingBottom: i < displayItems.length-1 ? 2 : 0,
+                                    borderBottom: i < displayItems.length-1 ? '1px dashed #ddd6fe' : 'none',
+                                  }}>
+                                    <span style={{ fontSize:'.65rem', fontWeight:800, color:'#7c3aed', letterSpacing:.3 }}>
+                                      {item.sub?.code}
+                                    </span>
+                                    <span style={{ fontSize:'.65rem', color:'var(--tx-muted)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                      {item.teacher?.name?.split(' ')[0] ?? '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              // Normal single-subject display
+                              <>
+                                <span className="sub">{displayItems[0].sub?.code}</span>
+                                <span className="teacher">{displayItems[0].teacher?.name?.split(' ')[0] ?? '—'}</span>
+                                {cls && <span className="cls">{cls.name}</span>}
+                              </>
+                            )
                           ) : (
                             viewMode==='class' && !locked && <span style={{ fontSize:'.72rem', color:'var(--tx-xmuted)' }}>+ Assign</span>
                           )}
@@ -383,40 +493,68 @@ export default function TimetablePage() {
           </div>
         </div>
       )}
-      {/* ── Print Class Selection Modal ── */}
+      {/* ── Print Modal — mode-aware ── */}
       {showPrintModal && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPrintModal(false)}>
           <div className="modal" style={{ maxWidth:420 }}>
             <div className="modal-header">
-              <h3>Print Timetables</h3>
+              <h3>Print {viewMode === 'teacher' ? 'Teacher' : 'Class'} Timetables</h3>
               <button className="btn btn-ghost btn-icon" onClick={()=>setShowPrintModal(false)}><X size={16}/></button>
             </div>
             <div className="modal-body">
-              <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Select classes to include. Each class prints on its own page.</p>
-              <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.5rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6 }}>
-                <input type="checkbox" checked={printClassIds.length === classes.length} onChange={toggleAllPrint}/>
-                Select All ({classes.length})
-              </label>
-              <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
-                {classes.map(c => (
-                  <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
-                    <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
-                    {c.name}
+              {viewMode === 'teacher' ? (
+                <>
+                  <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Select teachers to include. Each teacher prints on their own page.</p>
+                  <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.5rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6 }}>
+                    <input type="checkbox" checked={printTeacherIds.length === teachers.length} onChange={toggleAllPrintTeachers}/>
+                    Select All ({teachers.length})
                   </label>
-                ))}
-              </div>
+                  <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
+                    {teachers.map(t => (
+                      <label key={t.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printTeacherIds.includes(t.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
+                        <input type="checkbox" checked={printTeacherIds.includes(t.id)} onChange={()=>togglePrintTeacher(t.id)}/>
+                        <span>{t.name}</span>
+                        <span style={{ fontSize:'.72rem', color:'var(--tx-muted)', marginLeft:'auto' }}>{t.department}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Select classes to include. Each class prints on its own page.</p>
+                  <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.5rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6 }}>
+                    <input type="checkbox" checked={printClassIds.length === classes.length} onChange={toggleAllPrint}/>
+                    Select All ({classes.length})
+                  </label>
+                  <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
+                    {classes.map(c => (
+                      <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
+                        <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
+                        {c.name}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={()=>setShowPrintModal(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={printClassIds.length===0} onClick={doPrint}>
-                <Printer size={14}/> Print {printClassIds.length} Class{printClassIds.length!==1?'es':''}
-              </button>
+              {viewMode === 'teacher' ? (
+                <button className="btn btn-primary" disabled={printTeacherIds.length===0} onClick={doPrint}>
+                  <Printer size={14}/> Print {printTeacherIds.length} Teacher{printTeacherIds.length!==1?'s':''}
+                </button>
+              ) : (
+                <button className="btn btn-primary" disabled={printClassIds.length===0} onClick={doPrint}>
+                  <Printer size={14}/> Print {printClassIds.length} Class{printClassIds.length!==1?'es':''}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Hidden print pages — one per selected class ── */}
+
+      {/* ── Hidden print pages — class pages ── */}
       <div className="print-pages">
         {printClassIds.map(cid => {
           const cls = classes.find(c => c.id === cid);
@@ -447,12 +585,33 @@ export default function TimetablePage() {
                       {periods.map(p => {
                         if (p.isBreak) return <td key={p.period} className="tt-cell break"><div className="tt-slot"><span className="break-label">☕</span></div></td>;
                         const slot = getCellForPrint(cid, dayKey, p.period);
-                        const t = slot ? teachers.find(x=>x.id===slot.teacherId) : null;
-                        const s = slot ? subjects.find(x=>x.id===slot.subjectId) : null;
+                        const isOrGroup = slot?.alternatives && slot.alternatives.length > 1;
                         return (
-                          <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
+                          <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}
+                            style={{ background: isOrGroup ? '#faf5ff' : undefined,
+                              borderLeft: isOrGroup ? '2px solid #a78bfa' : undefined }}>
                             <div className="tt-slot">
-                              {slot ? (<><span className="sub">{s?.code}</span><span className="teacher">{t?.name?.split(' ')[0] ?? '—'}</span></>) : null}
+                              {slot && isOrGroup ? (
+                                <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                                  {slot.alternatives.map((alt, i) => {
+                                    const s = subjects.find(x => x.id === alt.subjectId);
+                                    const t = teachers.find(x => x.id === alt.teacherId);
+                                    return (
+                                      <div key={i} style={{ display:'flex', gap:3, alignItems:'center',
+                                        paddingBottom: i < slot.alternatives.length-1 ? 1 : 0,
+                                        borderBottom: i < slot.alternatives.length-1 ? '1px dashed #ddd6fe' : 'none' }}>
+                                        <span className="sub" style={{ color:'#7c3aed', fontSize:'.6rem' }}>{s?.code}</span>
+                                        <span className="teacher" style={{ fontSize:'.6rem' }}>{t?.name?.split(' ')[0]}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : slot ? (
+                                <>{/* normal */}
+                                  <span className="sub">{subjects.find(x=>x.id===slot.subjectId)?.code}</span>
+                                  <span className="teacher">{teachers.find(x=>x.id===slot.teacherId)?.name?.split(' ')[0] ?? '—'}</span>
+                                </>
+                              ) : null}
                             </div>
                           </td>
                         );
@@ -464,7 +623,64 @@ export default function TimetablePage() {
             </div>
           );
         })}
+
+        {/* ── Teacher print pages ── */}
+        {printTeacherIds.map(tid => {
+          const teacher = teachers.find(t => t.id === tid);
+          if (!teacher) return null;
+          const periods = getPeriodsForTeacher(tid);
+          return (
+            <div key={tid} className="print-page">
+              <div className="print-page-header">
+                <h2>{school?.name || 'School Timetable'}</h2>
+                <p>Teacher: {teacher.name} · {teacher.department}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+              </div>
+              <table className="tt-table print-tt">
+                <thead>
+                  <tr>
+                    <th className="day-col">DAY</th>
+                    {periods.map(p => (
+                      <th key={p.period}>
+                        {p.label}{p.isBreak ? ' 🫖' : ''}
+                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeDays.map(dayKey => {
+                    const dIdx = DAY_IDX[dayKey];
+                    return (
+                      <tr key={dayKey}>
+                        <th className="day-col">{dayKey}</th>
+                        {periods.map(p => {
+                          if (p.isBreak) return <td key={p.period} className="tt-cell break"><div className="tt-slot"><span className="break-label">☕</span></div></td>;
+                          const slot = schedule.find(s => s.teacherId === tid && s.day === dIdx && s.period === p.period);
+                          const sub  = slot ? subjects.find(x => x.id === slot.subjectId) : null;
+                          const cls  = slot ? classes.find(x => x.id === slot.classId)    : null;
+                          return (
+                            <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
+                              <div className="tt-slot">
+                                {slot ? (
+                                  <>
+                                    <span className="sub">{sub?.code}</span>
+                                    <span className="teacher">{cls?.name}</span>
+                                  </>
+                                ) : null}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
       </div>
+
     </div>
   );
 }
