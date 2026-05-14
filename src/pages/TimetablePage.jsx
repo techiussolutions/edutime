@@ -17,7 +17,7 @@ export default function TimetablePage() {
   const {
     settings, schedule, teachers, subjects, classes, school,
     lockedSlots = [], classAssignments = [], teacherAvailability = {},
-    classPeriodSettings = {}
+    classPeriodSettings = {}, classOrGroups = {},
   } = state;
 
   const [viewMode,       setViewMode]       = useState('class');
@@ -130,31 +130,67 @@ export default function TimetablePage() {
     );
   };
 
-  // ── Visual picker: teachers per subject for this class (filtered by classAssignments) ──
+  // ── Visual picker: individual subjects + OR group bundles ────────────────
   const visualOptions = useMemo(() => {
     if (!editing) return [];
     const { classId, dayKey, period } = editing;
     const dIdx = DAY_IDX[dayKey];
     const excludeId = slotId(classId, dayKey, period);
 
-    // Get assigned subjects for this class
     const assignedSubs = classAssignments.filter(a => a.classId === classId);
 
-    return assignedSubs.map(a => {
-      const sub = subjects.find(s => s.id === a.subjectId);
-      const teacher = teachers.find(t => t.id === a.teacherId);
-      // Check if assigned elsewhere
-      const busy = teacher ? schedule.some(s =>
-        s.teacherId===teacher.id && s.day===dIdx && s.period===period && s.id!==excludeId
-      ) : false;
-      // Check if blocked in availability settings
-      const unavailable = teacher ? teacherAvailability?.[teacher.id]?.[dayKey]?.[period] === false : false;
+    // Build OR group options first
+    const orGroupDefs = classOrGroups?.[classId] || [];
+    const orGroupSubjectIds = new Set(orGroupDefs.flatMap(g => g.subjectIds));
 
-      // How many times this subject already appears for this class this week
-      const weekCount = schedule.filter(s => s.classId===classId && s.subjectId===a.subjectId).length;
-      return { sub, teacher, subjectId: a.subjectId, teacherId: a.teacherId, busy, unavailable, weekCount };
-    }).filter(o => o.sub && o.teacher);
-  }, [editing, classAssignments, subjects, teachers, schedule]);
+    const orGroupOptions = orGroupDefs
+      .filter(g => g.label && g.subjectIds.length >= 2)
+      .map(grp => {
+        const alternatives = grp.subjectIds.map(sid => {
+          const assign = assignedSubs.find(a => a.subjectId === sid);
+          const teacherIds = assign?.teacherIds?.length ? assign.teacherIds : (assign?.teacherId ? [assign.teacherId] : []);
+          // Pick first free teacher from the pool
+          const freeTeacherId = teacherIds.find(tid => {
+            const busy = schedule.some(s => s.teacherId === tid && s.day === dIdx && s.period === period && s.id !== excludeId);
+            const unavail = teacherAvailability?.[tid]?.[dayKey]?.[period] === false;
+            return !busy && !unavail;
+          }) || teacherIds[0] || '';
+          const sub = subjects.find(s => s.id === sid);
+          const teacher = teachers.find(t => t.id === freeTeacherId);
+          const busy = schedule.some(s => s.teacherId === freeTeacherId && s.day === dIdx && s.period === period && s.id !== excludeId);
+          const unavailable = teacherAvailability?.[freeTeacherId]?.[dayKey]?.[period] === false;
+          return { subjectId: sid, teacherId: freeTeacherId, sub, teacher, busy, unavailable };
+        });
+        const anyBusy = alternatives.some(a => a.busy || a.unavailable || !a.teacherId);
+        const weekCount = schedule.filter(s =>
+          s.classId === classId && alternatives.some(a => a.subjectId === s.subjectId)
+        ).length;
+        return { isOrGroup: true, label: grp.label, alternatives, busy: anyBusy, weekCount };
+      });
+
+    // Individual (non-OR-group) subject options
+    const individualOptions = assignedSubs
+      .filter(a => !orGroupSubjectIds.has(a.subjectId))
+      .map(a => {
+        const sub = subjects.find(s => s.id === a.subjectId);
+        const teacherIds = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+        const freeTeacherId = teacherIds.find(tid => {
+          const busy = schedule.some(s => s.teacherId === tid && s.day === dIdx && s.period === period && s.id !== excludeId);
+          const unavail = teacherAvailability?.[tid]?.[dayKey]?.[period] === false;
+          return !busy && !unavail;
+        }) || teacherIds[0] || '';
+        const teacher = teachers.find(t => t.id === freeTeacherId);
+        const busy = freeTeacherId ? schedule.some(s =>
+          s.teacherId === freeTeacherId && s.day === dIdx && s.period === period && s.id !== excludeId
+        ) : false;
+        const unavailable = freeTeacherId ? teacherAvailability?.[freeTeacherId]?.[dayKey]?.[period] === false : false;
+        const weekCount = schedule.filter(s => s.classId === classId && s.subjectId === a.subjectId).length;
+        return { isOrGroup: false, sub, teacher, subjectId: a.subjectId, teacherId: freeTeacherId, busy, unavailable, weekCount };
+      }).filter(o => o.sub && o.teacher);
+
+    return [...orGroupOptions, ...individualOptions];
+  }, [editing, classAssignments, subjects, teachers, schedule, classOrGroups, teacherAvailability]);
+
 
   // ── Open/close edit ──────────────────────────────────────────────────────
   const openEdit = (classId, dayKey, period) => {
@@ -165,13 +201,23 @@ export default function TimetablePage() {
 
   // ── Quick-assign from visual block ───────────────────────────────────────
   const quickAssign = (opt) => {
-    if (opt.busy || opt.unavailable) return; // teacher is occupied or blocked, not clickable
+    if (opt.busy || opt.unavailable) return;
     const { classId, dayKey, period } = editing;
     const dIdx = DAY_IDX[dayKey];
-    const id = slotId(classId, dayKey, period);
-    dispatch({ type:'ASSIGN_SLOT', payload:{ classId, day:dIdx, period, teacherId:opt.teacherId, subjectId:opt.subjectId } });
+    if (opt.isOrGroup) {
+      // OR group: dispatch with alternatives
+      const leader = opt.alternatives[0];
+      dispatch({ type: 'ASSIGN_SLOT', payload: {
+        classId, day: dIdx, period,
+        teacherId: leader.teacherId, subjectId: leader.subjectId,
+        alternatives: opt.alternatives.map(a => ({ subjectId: a.subjectId, teacherId: a.teacherId })),
+      }});
+    } else {
+      dispatch({ type: 'ASSIGN_SLOT', payload: { classId, day: dIdx, period, teacherId: opt.teacherId, subjectId: opt.subjectId } });
+    }
     setEditing(null); setConflict(null);
   };
+
 
   const clearSlot = () => {
     if (!editing) return;
@@ -440,44 +486,81 @@ export default function TimetablePage() {
                     </div>
                   ) : (
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'.625rem' }}>
-                      {visualOptions.map(opt => {
+                    {visualOptions.map((opt, oi) => {
                         const currentSlot = getCellData(editing.classId, editing.dayKey, editing.period);
-                        const isCurrentlyAssigned = currentSlot?.subjectId===opt.subjectId;
+                        const isCurrentlyAssigned = opt.isOrGroup
+                          ? currentSlot?.alternatives?.some(a => a.subjectId === opt.alternatives?.[0]?.subjectId)
+                          : currentSlot?.subjectId === opt.subjectId;
                         return (
                           <button
-                            key={opt.subjectId}
+                            key={opt.isOrGroup ? `org_${opt.label}` : opt.subjectId}
                             onClick={() => !opt.busy && quickAssign(opt)}
-                            title={opt.busy ? `${opt.teacher?.name} is already teaching another class this period` : `Assign ${opt.sub?.name} (${opt.teacher?.name})`}
+                            title={opt.busy
+                              ? (opt.isOrGroup ? 'One or more teachers in this OR group are busy' : `${opt.teacher?.name} is already teaching another class this period`)
+                              : (opt.isOrGroup ? `Assign OR group: ${opt.label}` : `Assign ${opt.sub?.name} (${opt.teacher?.name})`)}
                             style={{
                               display:'flex', flexDirection:'column', alignItems:'flex-start',
                               padding:'.75rem 1rem', borderRadius:'var(--r-lg)',
-                              border:`2px solid ${opt.busy ? 'var(--clr-red)' : isCurrentlyAssigned ? 'var(--clr-primary)' : 'var(--border)'}`,
-                              background: opt.busy ? '#fef2f2' : isCurrentlyAssigned ? 'var(--clr-primary-l)' : 'var(--bg-card)',
+                              border:`2px solid ${opt.busy ? 'var(--clr-red)' : isCurrentlyAssigned ? (opt.isOrGroup ? '#7c3aed' : 'var(--clr-primary)') : (opt.isOrGroup ? '#c4b5fd' : 'var(--border)')}`,
+                              background: opt.busy ? '#fef2f2' : isCurrentlyAssigned ? (opt.isOrGroup ? '#ede9fe' : 'var(--clr-primary-l)') : (opt.isOrGroup ? '#faf5ff' : 'var(--bg-card)'),
                               cursor: opt.busy ? 'not-allowed' : 'pointer',
                               opacity: opt.busy ? 0.65 : 1,
-                              minWidth:140, textAlign:'left',
-                              transition:'all .15s',
-                              position:'relative',
+                              minWidth: opt.isOrGroup ? 180 : 140, textAlign:'left',
+                              transition:'all .15s', position:'relative',
                             }}
                           >
-                            {/* Subject pill */}
-                            <span style={{ fontSize:'.7rem', fontWeight:800, letterSpacing:.5, background: opt.busy?'#fca5a5':'var(--clr-primary)', color:'#fff', borderRadius:4, padding:'1px 7px', marginBottom:'.35rem' }}>
-                              {opt.sub?.code}
-                            </span>
-                            <span style={{ fontWeight:700, fontSize:'.875rem', color:'var(--tx-main)' }}>{opt.sub?.name}</span>
-                            <div style={{ display:'flex', alignItems:'center', gap:'.3rem', marginTop:'.3rem', fontSize:'.75rem', color: (opt.busy || opt.unavailable)?'var(--clr-red)':'var(--tx-muted)' }}>
-                              <User size={11}/> {opt.teacher?.name?.split(' ')[0]}
-                              {opt.busy && <span style={{ fontWeight:700 }}>· BUSY</span>}
-                              {opt.unavailable && <span style={{ fontWeight:700 }}>· UNAVAILABLE</span>}
-                            </div>
-                            <div style={{ fontSize:'.68rem', color:'var(--tx-muted)', marginTop:'.2rem' }}>
-                              {opt.weekCount} period{opt.weekCount!==1?'s':''} this week
-                            </div>
+                            {opt.isOrGroup ? (
+                              // ── OR Group card ──────────────────────────────
+                              <>
+                                <span style={{ fontSize:'.68rem', fontWeight:800, letterSpacing:.5,
+                                  background: opt.busy ? '#fca5a5' : '#7c3aed', color:'#fff',
+                                  borderRadius:4, padding:'1px 7px', marginBottom:'.4rem' }}>
+                                  ⇄ OR Group
+                                </span>
+                                <span style={{ fontWeight:700, fontSize:'.82rem', color:'var(--tx-main)', marginBottom:'.35rem' }}>
+                                  {opt.label}
+                                </span>
+                                {opt.alternatives.map(a => (
+                                  <div key={a.subjectId} style={{ display:'flex', alignItems:'center', gap:'.3rem',
+                                    fontSize:'.73rem', marginBottom:'.15rem',
+                                    color: (a.busy || a.unavailable) ? 'var(--clr-red)' : 'var(--tx-muted)' }}>
+                                    <span style={{ fontWeight:700, color: '#5b21b6', minWidth:32 }}>{a.sub?.code}</span>
+                                    <User size={10}/>
+                                    <span>{a.teacher?.name?.split(' ')[0] ?? '— no teacher'}</span>
+                                    {(a.busy || a.unavailable) && <span style={{ fontWeight:700 }}>· BUSY</span>}
+                                  </div>
+                                ))}
+                                <div style={{ fontSize:'.68rem', color:'var(--tx-muted)', marginTop:'.25rem' }}>
+                                  {opt.weekCount} period{opt.weekCount!==1?'s':''} this week
+                                </div>
+                              </>
+                            ) : (
+                              // ── Individual subject card ────────────────────
+                              <>
+                                <span style={{ fontSize:'.7rem', fontWeight:800, letterSpacing:.5,
+                                  background: opt.busy ? '#fca5a5' : 'var(--clr-primary)', color:'#fff',
+                                  borderRadius:4, padding:'1px 7px', marginBottom:'.35rem' }}>
+                                  {opt.sub?.code}
+                                </span>
+                                <span style={{ fontWeight:700, fontSize:'.875rem', color:'var(--tx-main)' }}>{opt.sub?.name}</span>
+                                <div style={{ display:'flex', alignItems:'center', gap:'.3rem', marginTop:'.3rem', fontSize:'.75rem',
+                                  color: (opt.busy || opt.unavailable) ? 'var(--clr-red)' : 'var(--tx-muted)' }}>
+                                  <User size={11}/> {opt.teacher?.name?.split(' ')[0]}
+                                  {opt.busy && <span style={{ fontWeight:700 }}>· BUSY</span>}
+                                  {opt.unavailable && <span style={{ fontWeight:700 }}>· UNAVAILABLE</span>}
+                                </div>
+                                <div style={{ fontSize:'.68rem', color:'var(--tx-muted)', marginTop:'.2rem' }}>
+                                  {opt.weekCount} period{opt.weekCount!==1?'s':''} this week
+                                </div>
+                              </>
+                            )}
                             {isCurrentlyAssigned && !opt.busy && (
-                              <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
+                              <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem',
+                                color: opt.isOrGroup ? '#7c3aed' : 'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
                             )}
                           </button>
                         );
+
                       })}
                     </div>
                   )}
