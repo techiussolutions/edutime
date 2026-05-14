@@ -9,7 +9,10 @@ const AppContext = createContext();
 const mapTeacherFromDb = (r)  => ({ id: r.id, name: r.name, department: r.department, subjects: r.subjects, maxPeriods: r.max_periods, phone: r.phone, email: r.email, designation: r.designation, joining: r.joining, active: r.active });
 const mapClassFromDb  = (r)   => ({ id: r.id, name: r.name, grade: r.grade, section: r.section, gradeGroup: r.grade_group, classTeacherId: r.class_teacher_id });
 const mapSubjectFromDb = (r)  => ({ id: r.id, name: r.name, code: r.code, gradeGroups: r.grade_groups, orGroup: r.or_group || '' });
-const mapAssignFromDb = (r)   => ({ id: r.id, classId: r.class_id, subjectId: r.subject_id, teacherId: r.teacher_id });
+const mapAssignFromDb = (r)   => ({ id: r.id, classId: r.class_id, subjectId: r.subject_id,
+  teacherIds: r.teacher_ids?.length ? r.teacher_ids : (r.teacher_id ? [r.teacher_id] : []),
+  teacherId:  r.teacher_ids?.[0] || r.teacher_id || '' });  // primary (compat)
+
 const mapSlotFromDb   = (r)   => ({ id: r.id, classId: r.class_id, day: r.day, period: r.period, teacherId: r.teacher_id, subjectId: r.subject_id, alternatives: r.alternatives || null });
 const mapAbsenceFromDb = (r)  => ({ id: r.id, teacherId: r.teacher_id, date: r.date, leaveType: r.leave_type, reason: r.reason });
 const mapSubFromDb    = (r)   => ({ id: r.id, date: r.date, day: r.day, period: r.period, scheduleId: r.schedule_id, absentTeacherId: r.absent_teacher_id, substituteTeacherId: r.substitute_teacher_id, assignedBy: r.assigned_by });
@@ -196,26 +199,18 @@ function reducer(state, action) {
       break;
     case 'DELETE_TEACHER': {
       const tid = action.payload;
-      // 1. Remove teacher from teacher list
-      // 2. Null-out their teacherId in classAssignments (subject stays, teacher unset)
-      // 3. Remove their schedule slots (only unlocked ones)
-      // 4. Remove from classOrGroups sibling lists (subjects without teacher can still be in a group)
-      // 5. Clear teacherAvailability for this teacher
-      // 6. Unset any class where they are classTeacher
       next = {
         ...state,
         teachers: state.teachers.filter(t => t.id !== tid),
         classes:  state.classes.map(c => c.classTeacherId === tid ? { ...c, classTeacherId: '' } : c),
-        classAssignments: state.classAssignments.map(a =>
-          a.teacherId === tid ? { ...a, teacherId: '' } : a
-        ),
+        classAssignments: state.classAssignments.map(a => {
+          const newIds = (a.teacherIds || []).filter(id => id !== tid);
+          return { ...a, teacherIds: newIds, teacherId: newIds[0] || '' };
+        }),
         schedule: state.schedule.filter(s =>
-          // Keep locked slots even if they reference this teacher (admin locked them)
           state.lockedSlots.includes(s.id) ||
-          // Keep slots that don't involve this teacher at all
           (s.teacherId !== tid && !(s.alternatives?.some(alt => alt.teacherId === tid)))
         ).map(s => {
-          // For OR-group slots, strip the deleted teacher from alternatives
           if (!s.alternatives) return s;
           const newAlts = s.alternatives.filter(alt => alt.teacherId !== tid);
           return { ...s, alternatives: newAlts.length >= 1 ? newAlts : s.alternatives };
@@ -226,6 +221,7 @@ function reducer(state, action) {
       };
       break;
     }
+
 
 
     // Master data – Classes
@@ -255,17 +251,26 @@ function reducer(state, action) {
 
     // Class subject-teacher assignments
     case 'SET_CLASS_ASSIGNMENTS': {
-      // action.payload = { classId, assignments: [{ subjectId, teacherId }] }
-      // Store ALL subject entries including those with no teacher yet so they
-      // remain visible in the wizard and can be assigned later.
       const { classId, assignments } = action.payload;
       const kept = state.classAssignments.filter(a => a.classId !== classId);
       const newOnes = assignments
-        .filter(a => a.subjectId) // only skip entries missing a subjectId entirely
-        .map((a, i) => ({ id: `ca_${classId}_${a.subjectId}_${i}`, classId, subjectId: a.subjectId, teacherId: a.teacherId || '' }));
+        .filter(a => a.subjectId)
+        .map((a, i) => {
+          const teacherIds = Array.isArray(a.teacherIds)
+            ? a.teacherIds.filter(Boolean)
+            : (a.teacherId ? [a.teacherId] : []);
+          return {
+            id: `ca_${classId}_${a.subjectId}_${i}`,
+            classId,
+            subjectId: a.subjectId,
+            teacherIds,
+            teacherId: teacherIds[0] || '',  // primary for backward compat
+          };
+        });
       next = { ...state, classAssignments: [...kept, ...newOnes] };
       break;
     }
+
 
     // Clear all unlocked schedule slots for a specific class
     case 'CLEAR_CLASS_SCHEDULE': {

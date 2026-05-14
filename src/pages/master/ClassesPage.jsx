@@ -56,7 +56,10 @@ export default function ClassesPage() {
   const openEdit = (cls) => {
     setForm({ ...cls });
     const existing = {};
-    classAssignments.filter(a => a.classId === cls.id).forEach(a => { existing[a.subjectId] = a.teacherId; });
+    classAssignments.filter(a => a.classId === cls.id).forEach(a => {
+      const ids = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+      existing[a.subjectId] = ids.filter(Boolean);
+    });
     setSubjectTeachers(existing);
     setOrGroups((state.classOrGroups?.[cls.id] || []).map(g => ({ ...g, subjectIds: [...g.subjectIds] })));
     setNewOrLabel('');
@@ -65,6 +68,7 @@ export default function ClassesPage() {
     setCustomPeriods(saved ? [...saved.periodTimings.map(p => ({...p}))] : defaultCustomPeriods(settings.periodTimings));
     setStep(1); setModal(cls);
   };
+
 
 
   // ── Period editor helpers ─────────────────────────────────────────────────
@@ -98,9 +102,13 @@ export default function ClassesPage() {
       type: 'SET_CLASS_ASSIGNMENTS',
       payload: {
         classId,
-        assignments: applicableSubjects.map(sub => ({ subjectId: sub.id, teacherId: subjectTeachers[sub.id] || '' })),
+        assignments: applicableSubjects.map(sub => ({
+          subjectId: sub.id,
+          teacherIds: subjectTeachers[sub.id] || [],
+        })),
       },
     });
+
     dispatch({ type: 'SET_CLASS_PERIOD_SETTINGS', payload: { classId, periodTimings: useCustom ? customPeriods : null } });
     // Save OR groups (filter out empty ones)
     const validGroups = orGroups.filter(g => g.label.trim() && g.subjectIds.length >= 2);
@@ -276,50 +284,87 @@ export default function ClassesPage() {
               )}
 
               {/* ── STEP 2: Subject-Teacher Assignments + OR Groups ── */}
-              {step === 2 && (
-                <div>
-                  <p style={{ marginBottom: '1rem', fontSize: '.875rem', color: 'var(--tx-muted)' }}>
-                    Assign a teacher to each subject for <strong>{form.grade} - {form.section}</strong>.
-                  </p>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Subject</th><th>Assigned Teacher</th></tr></thead>
-                      <tbody>
-                        {applicableSubjects.map(sub => {
-                          const qualified = teachers.filter(t => t.subjects?.includes(sub.id));
-                          return (
-                            <tr key={sub.id}>
-                              <td>
-                                <div style={{ fontWeight: 600 }}>{sub.name}</div>
-                                <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{sub.code}</div>
-                              </td>
-                              <td>
-                                <select className="input" style={{ width: '100%' }}
-                                  value={subjectTeachers[sub.id] || ''}
-                                  onChange={e => setSubjectTeachers(prev => ({ ...prev, [sub.id]: e.target.value }))}>
-                                  <option value="">— Not assigned (skip) —</option>
-                                  {(qualified.length > 0 ? qualified : teachers).map(t =>
-                                    <option key={t.id} value={t.id}>{t.name} ({t.department})</option>
-                                  )}
-                                </select>
-                                {qualified.length === 0 && (
-                                  <div style={{ fontSize: '.7rem', color: 'var(--tx-muted)', marginTop: '.2rem' }}>
-                                    No qualified teacher — all teachers shown
+              {step === 2 && (() => {
+                // Helper: add/remove a teacher for a subject
+                const addTeacher = (subId, tid) => {
+                  if (!tid) return;
+                  setSubjectTeachers(prev => {
+                    const cur = prev[subId] || [];
+                    return cur.includes(tid) ? prev : { ...prev, [subId]: [...cur, tid] };
+                  });
+                };
+                const removeTeacher = (subId, tid) => {
+                  setSubjectTeachers(prev => ({ ...prev, [subId]: (prev[subId] || []).filter(id => id !== tid) }));
+                };
+                const assignedCount = applicableSubjects.filter(s => (subjectTeachers[s.id] || []).length > 0).length;
+                return (
+                  <div>
+                    <p style={{ marginBottom: '1rem', fontSize: '.875rem', color: 'var(--tx-muted)' }}>
+                      Assign one or more teachers to each subject for <strong>{form.grade} - {form.section}</strong>.
+                    </p>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Subject</th><th>Assigned Teacher(s)</th></tr></thead>
+                        <tbody>
+                          {applicableSubjects.map(sub => {
+                            const qualified  = teachers.filter(t => t.subjects?.includes(sub.id));
+                            const pool       = qualified.length > 0 ? qualified : teachers;
+                            const assigned   = subjectTeachers[sub.id] || [];
+                            const unselected = pool.filter(t => !assigned.includes(t.id));
+                            return (
+                              <tr key={sub.id}>
+                                <td style={{ verticalAlign: 'top', paddingTop: '.65rem' }}>
+                                  <div style={{ fontWeight: 600 }}>{sub.name}</div>
+                                  <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{sub.code}</div>
+                                </td>
+                                <td>
+                                  {/* Chips for already-assigned teachers */}
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginBottom: assigned.length ? '.4rem' : 0 }}>
+                                    {assigned.map(tid => {
+                                      const t = teachers.find(x => x.id === tid);
+                                      return (
+                                        <span key={tid} style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '.25rem',
+                                          background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd',
+                                          borderRadius: 20, padding: '.15rem .55rem', fontSize: '.76rem', fontWeight: 600,
+                                        }}>
+                                          {t?.name?.split(' ')[0] ?? tid}
+                                          <button style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                            color: '#7c3aed', padding: 0, lineHeight: 1, fontSize: '.85rem' }}
+                                            onClick={() => removeTeacher(sub.id, tid)} title="Remove">×</button>
+                                        </span>
+                                      );
+                                    })}
                                   </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ marginTop: '.75rem', fontSize: '.8rem', color: 'var(--tx-muted)' }}>
-                    ✅ {Object.values(subjectTeachers).filter(Boolean).length} of {applicableSubjects.length} subjects assigned
-                  </div>
+                                  {/* Add teacher dropdown */}
+                                  {unselected.length > 0 && (
+                                    <select className="input" style={{ width: '100%', fontSize: '.8rem' }}
+                                      value=""
+                                      onChange={e => addTeacher(sub.id, e.target.value)}>
+                                      <option value="">{assigned.length ? '+ Add another teacher…' : '— Assign teacher —'}</option>
+                                      {unselected.map(t =>
+                                        <option key={t.id} value={t.id}>{t.name} ({t.department})</option>
+                                      )}
+                                    </select>
+                                  )}
+                                  {qualified.length === 0 && (
+                                    <div style={{ fontSize: '.7rem', color: 'var(--tx-muted)', marginTop: '.2rem' }}>
+                                      No qualified teacher — all teachers shown
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ marginTop: '.75rem', fontSize: '.8rem', color: 'var(--tx-muted)' }}>
+                      ✅ {assignedCount} of {applicableSubjects.length} subjects assigned
+                    </div>
 
-                  {/* ── OR Groups section ── */}
-                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+                    {/* ── OR Groups section ── */}
+                    <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.75rem' }}>
                       <Link2 size={15} color="#7c3aed"/>
                       <strong style={{ fontSize: '.875rem' }}>OR Subject Groups</strong>
@@ -394,8 +439,9 @@ export default function ClassesPage() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
+                  </div>
+                );
+              })()}
 
 
               {/* ── STEP 3: Period Schedule ── */}
