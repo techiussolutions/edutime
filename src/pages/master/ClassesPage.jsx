@@ -144,7 +144,11 @@ export default function ClassesPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '.75rem' }}>
             {group.classes.map(cls => {
               const classTeacher  = teachers.find(t => t.id === cls.classTeacherId);
-              const assignments   = classAssignments.filter(a => a.classId === cls.id);
+              const allAssignments = classAssignments.filter(a => a.classId === cls.id);
+              // Only count rows that actually have a teacher (teacherIds[] non-empty or legacy teacherId)
+              const assignments   = allAssignments.filter(a =>
+                (a.teacherIds?.length > 0) || !!a.teacherId
+              );
               const totalSubjs    = subjects.filter(s => !s.gradeGroups || s.gradeGroups.length === 0 || s.gradeGroups.includes(cls.gradeGroup)).length;
               const periodSetting = classPeriodSettings[cls.id];
               const nonBreakCount = periodSetting
