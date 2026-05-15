@@ -74,38 +74,50 @@ export default async function handler(req, res) {
       case 'SET_CLASS_ASSIGNMENTS': {
         const { classId, assignments } = payload;
         await db`DELETE FROM class_subject_assignments WHERE class_id = ${classId} AND school_id = ${schoolId}`;
-        const rows = assignments.filter(a => a.teacherId).map((a, i) => ({
-          id: `ca_${classId}_${a.subjectId}_${i}`,
-          school_id: schoolId,
-          class_id: classId,
-          subject_id: a.subjectId,
-          teacher_id: a.teacherId,
-        }));
+        // Support both teacherIds[] (new) and teacherId (legacy)
+        const rows = assignments
+          .map((a, i) => {
+            const ids = Array.isArray(a.teacherIds) && a.teacherIds.length
+              ? a.teacherIds
+              : (a.teacherId ? [a.teacherId] : []);
+            return {
+              id: `ca_${classId}_${a.subjectId}_${i}`,
+              school_id: schoolId,
+              class_id: classId,
+              subject_id: a.subjectId,
+              teacher_id: ids[0] || null,
+              teacher_ids: ids,
+            };
+          })
+          .filter(r => r.teacher_ids.length > 0 || r.teacher_id); // skip totally unassigned
         if (rows.length) {
           for (const r of rows) {
             await db`
-              INSERT INTO class_subject_assignments (id, school_id, class_id, subject_id, teacher_id)
-              VALUES (${r.id}, ${r.school_id}, ${r.class_id}, ${r.subject_id}, ${r.teacher_id})
+              INSERT INTO class_subject_assignments (id, school_id, class_id, subject_id, teacher_id, teacher_ids)
+              VALUES (${r.id}, ${r.school_id}, ${r.class_id}, ${r.subject_id}, ${r.teacher_id}, ${r.teacher_ids})
               ON CONFLICT (id, school_id) DO UPDATE SET
-                class_id = EXCLUDED.class_id, subject_id = EXCLUDED.subject_id, teacher_id = EXCLUDED.teacher_id
+                class_id = EXCLUDED.class_id, subject_id = EXCLUDED.subject_id,
+                teacher_id = EXCLUDED.teacher_id, teacher_ids = EXCLUDED.teacher_ids
             `;
           }
         }
         break;
       }
 
+
       // ── Timetable slots ─────────────────────────────────
       case 'ASSIGN_SLOT': {
-        const { classId, day, period, teacherId, subjectId } = payload;
+        const { classId, day, period, teacherId, subjectId, alternatives } = payload;
         const slotId = `sch_${classId}_${day}_${period}`;
         await db`
-          INSERT INTO timetable_slots (id, school_id, class_id, day, period, teacher_id, subject_id, is_locked)
-          VALUES (${slotId}, ${schoolId}, ${classId}, ${day}, ${period}, ${teacherId || null}, ${subjectId || null}, false)
+          INSERT INTO timetable_slots (id, school_id, class_id, day, period, teacher_id, subject_id, is_locked, alternatives)
+          VALUES (${slotId}, ${schoolId}, ${classId}, ${day}, ${period}, ${teacherId || null}, ${subjectId || null}, false, ${alternatives ? JSON.stringify(alternatives) : null}::jsonb)
           ON CONFLICT (id, school_id) DO UPDATE SET
-            teacher_id = EXCLUDED.teacher_id, subject_id = EXCLUDED.subject_id
+            teacher_id = EXCLUDED.teacher_id, subject_id = EXCLUDED.subject_id, alternatives = EXCLUDED.alternatives
         `;
         break;
       }
+
       case 'CLEAR_SLOT':
         await db`DELETE FROM timetable_slots WHERE id = ${payload} AND school_id = ${schoolId}`;
         break;
@@ -188,18 +200,31 @@ export default async function handler(req, res) {
       case 'SYNC_SETTINGS': {
         const s = payload;
         await db`
-          INSERT INTO school_settings (school_id, working_days, periods_per_day, period_timings, break_periods, max_default_periods, substitution_priority, assembly_day, assembly_period, periods_config, class_period_settings, locked_slots, setup_skipped, updated_at)
-          VALUES (${schoolId}, ${JSON.stringify(s.working_days)}::jsonb, ${s.periods_per_day}, ${JSON.stringify(s.period_timings)}::jsonb, ${s.break_periods}, ${s.max_default_periods}, ${s.substitution_priority}, ${s.assembly_day}, ${s.assembly_period}, ${JSON.stringify(s.periods_config)}::jsonb, ${JSON.stringify(s.class_period_settings)}::jsonb, ${s.locked_slots}, ${s.setup_skipped || false}, ${new Date().toISOString()})
+          INSERT INTO school_settings (
+            school_id, working_days, periods_per_day, period_timings, break_periods,
+            max_default_periods, substitution_priority, assembly_day, assembly_period,
+            periods_config, class_period_settings, locked_slots, setup_skipped, class_or_groups, updated_at
+          )
+          VALUES (
+            ${schoolId}, ${JSON.stringify(s.working_days)}::jsonb, ${s.periods_per_day},
+            ${JSON.stringify(s.period_timings)}::jsonb, ${s.break_periods}, ${s.max_default_periods},
+            ${s.substitution_priority}, ${s.assembly_day}, ${s.assembly_period},
+            ${JSON.stringify(s.periods_config)}::jsonb, ${JSON.stringify(s.class_period_settings)}::jsonb,
+            ${s.locked_slots}, ${s.setup_skipped || false},
+            ${JSON.stringify(s.class_or_groups || {})}::jsonb, ${new Date().toISOString()}
+          )
           ON CONFLICT (school_id) DO UPDATE SET
             working_days = EXCLUDED.working_days, periods_per_day = EXCLUDED.periods_per_day,
             period_timings = EXCLUDED.period_timings, break_periods = EXCLUDED.break_periods,
             max_default_periods = EXCLUDED.max_default_periods, substitution_priority = EXCLUDED.substitution_priority,
             assembly_day = EXCLUDED.assembly_day, assembly_period = EXCLUDED.assembly_period,
             periods_config = EXCLUDED.periods_config, class_period_settings = EXCLUDED.class_period_settings,
-            locked_slots = EXCLUDED.locked_slots, setup_skipped = EXCLUDED.setup_skipped, updated_at = EXCLUDED.updated_at
+            locked_slots = EXCLUDED.locked_slots, setup_skipped = EXCLUDED.setup_skipped,
+            class_or_groups = EXCLUDED.class_or_groups, updated_at = EXCLUDED.updated_at
         `;
         break;
       }
+
 
       // ── Seed initial data ──────────────────────────────
       case 'SEED': {
