@@ -121,6 +121,10 @@ export default async function handler(req, res) {
       case 'CLEAR_SLOT':
         await db`DELETE FROM timetable_slots WHERE id = ${payload} AND school_id = ${schoolId}`;
         break;
+      case 'CLEAR_CLASS_SCHEDULE':
+        await db`DELETE FROM timetable_slots WHERE class_id = ${payload} AND school_id = ${schoolId} AND is_locked = false`;
+        break;
+
       case 'BULK_SET_SCHEDULE': {
         await db`DELETE FROM timetable_slots WHERE school_id = ${schoolId} AND is_locked = false`;
         if (payload?.length) {
