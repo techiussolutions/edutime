@@ -149,6 +149,9 @@ export default function WizardPage() {
       const result = generateTimetable(state, opts);
       setGenerated(result);
       setStep(prev => (prev < 3 ? 3 : prev));
+    } catch (err) {
+      console.error("Timetable Generator Error:", err);
+      alert("An error occurred while generating the timetable:\n" + err.message + "\n\nPlease check the console for more details.");
     } finally {
       setGenerating(false);
     }
