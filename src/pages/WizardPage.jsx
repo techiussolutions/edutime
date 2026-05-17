@@ -555,7 +555,7 @@ export default function WizardPage() {
             {/* Class selector */}
             <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'center' }}>
               <span style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>Previewing:</span>
-              {classes.map(cls => (
+              {sortedClasses.map(cls => (
                 <button key={cls.id} onClick={() => setPreviewClass(cls.id)}
                   className={`badge ${previewClass === cls.id ? 'badge-indigo' : 'badge-gray'}`}
                   style={{ cursor: 'pointer', padding: '.35rem .75rem' }}>
@@ -564,10 +564,15 @@ export default function WizardPage() {
               ))}
             </div>
 
+
             <div className="card">
               <div style={{ overflowX: 'auto' }}>
                 {(() => {
                   const previewPeriods = getClassPeriods(previewClass);
+                  const mergedSchedule = genMode === 'selected'
+                    ? [...schedule.filter(s => !selectedClassIds.includes(s.classId)), ...generated.schedule]
+                    : generated.schedule;
+
                   return (
                   <table className="tt-table" style={{ fontSize: '.8rem' }}>
                     <thead>
@@ -590,8 +595,9 @@ export default function WizardPage() {
                               );
                               const locked = lockedSlots.includes(slotId(previewClass, dayKey, p.period));
                               const data = !locked
-                                ? getCellData(generated.schedule, previewClass, dayKey, p.period)
+                                ? getCellData(mergedSchedule, previewClass, dayKey, p.period)
                                 : getCellData(schedule, previewClass, dayKey, p.period);
+
                               return (
                                 <td key={p.period} className={`tt-cell${data ? ' assigned' : ''}`} style={{ background: locked ? '#fffbeb' : undefined, position: 'relative' }}>
                                   {locked && (

@@ -92,7 +92,7 @@ async function loadData(schoolId) {
 async function syncActionToNeon(action, schoolId) {
   // Settings are handled via debounced effect, not per-action
   if (['UPDATE_SETTINGS', 'UPDATE_PERIOD', 'ADD_PERIOD', 'REMOVE_PERIOD',
-       'SET_PERIODS_CONFIG', 'SET_CLASS_PERIOD_SETTINGS', 'UPDATE_SCHOOL'].includes(action.type)) {
+       'SET_PERIODS_CONFIG', 'SET_CLASS_PERIOD_SETTINGS', 'UPDATE_SCHOOL', 'SET_CLASS_OR_GROUPS'].includes(action.type)) {
     return;
   }
   await syncAction(action.type, schoolId, action.payload);

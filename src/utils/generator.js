@@ -244,15 +244,20 @@ export function generateTimetable(state, requirements) {
     if (d.remaining > 0) {
       const sub = subjects.find(s => s.id === d.subjectId);
       const cls = classes.find(c => c.id === d.classId);
-      const teacher = teachers.find(t => t.id === d.teacherId);
-      const load = teacherLoad[d.teacherId] || 0;
+      // demands now carry teacherIds[] — show the primary (first) teacher
+      const primaryTid = d.teacherIds?.[0];
+      const teacher = teachers.find(t => t.id === primaryTid);
+      const load = teacherLoad[primaryTid] || 0;
       const cap = teacher?.maxPeriods ?? '?';
+      const extraCount = (d.teacherIds?.length || 1) - 1;
       warnings.push(
         `${cls?.name}: ${sub?.name} still needs ${d.remaining} more period(s). ` +
-        `${teacher?.name} is at ${load}/${cap} periods/week — consider adding another teacher for this subject.`
+        `${teacher?.name ?? primaryTid}${extraCount > 0 ? ` (+${extraCount} co-teacher${extraCount > 1 ? 's' : ''})` : ''} ` +
+        `is at ${load}/${cap} periods/week — consider adding another teacher for this subject.`
       );
     }
   });
+
 
   return { schedule, warnings, teacherLoad };
 }
@@ -305,15 +310,21 @@ export function analyzeStaffing(state, classSubjectMap) {
       if (!sd) return;
       sd.totalPeriods += req.periodsPerWeek;
 
-      // Find assigned teacher for this class-subject
+      // Support teacherIds[] (multi-teacher) and legacy teacherId
       const assignment = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
       if (assignment) {
-        sd.teacherPeriods[assignment.teacherId] = (sd.teacherPeriods[assignment.teacherId] || 0) + req.periodsPerWeek;
-        if (!sd.teacherClasses[assignment.teacherId]) sd.teacherClasses[assignment.teacherId] = [];
-        sd.teacherClasses[assignment.teacherId].push(cls.name);
+        const tids = assignment.teacherIds?.length ? assignment.teacherIds : (assignment.teacherId ? [assignment.teacherId] : []);
+        tids.forEach(tid => {
+          // Split periods evenly across co-teachers for analysis purposes
+          const share = req.periodsPerWeek / tids.length;
+          sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + share;
+          if (!sd.teacherClasses[tid]) sd.teacherClasses[tid] = [];
+          if (!sd.teacherClasses[tid].includes(cls.name)) sd.teacherClasses[tid].push(cls.name);
+        });
       }
     });
   });
+
 
   const avgMaxPeriods = teachers.length > 0
     ? teachers.reduce((s, t) => s + t.maxPeriods, 0) / teachers.length
