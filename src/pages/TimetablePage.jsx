@@ -20,8 +20,17 @@ export default function TimetablePage() {
     classPeriodSettings = {}, classOrGroups = {},
   } = state;
 
+  // Sort classes numerically by grade, then section alphabetically
+  const sortedClasses = [...classes].sort((a, b) => {
+    const ga = parseInt(a.grade, 10) || 0;
+    const gb = parseInt(b.grade, 10) || 0;
+    if (ga !== gb) return ga - gb;
+    return (a.section || '').localeCompare(b.section || '');
+  });
+
   const [viewMode,       setViewMode]       = useState('class');
-  const [selectedClass,  setSelectedClass]  = useState(classes[0]?.id);
+  const [selectedClass,  setSelectedClass]  = useState(() => sortedClasses[0]?.id);
+
   const [selectedTeacher,setSelectedTeacher]= useState(teachers[0]?.id);
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
@@ -267,7 +276,8 @@ export default function TimetablePage() {
           ? (
             <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
               <select className="input" style={{width:200}} value={selectedClass} onChange={e=>{setSelectedClass(e.target.value); setClearConfirmClass(false);}}>
-                {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                {sortedClasses.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+
               </select>
               {canEdit && schedule.some(s => s.classId === selectedClass && !lockedSlots.includes(s.id)) && (
                 <button
@@ -610,7 +620,8 @@ export default function TimetablePage() {
                     Select All ({classes.length})
                   </label>
                   <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
-                    {classes.map(c => (
+                    {sortedClasses.map(c => (
+
                       <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
                         <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
                         {c.name}

@@ -26,6 +26,15 @@ export default function WizardPage() {
   const activeDayKeys = Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => { const o = {Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5}; return o[a]-o[b]; });
   const nonBreakPeriods = settings.periodTimings.filter(p => !p.isBreak);
 
+  // Sort classes numerically by grade, then section alphabetically
+  const sortedClasses = [...classes].sort((a, b) => {
+    const ga = parseInt(a.grade, 10) || 0;
+    const gb = parseInt(b.grade, 10) || 0;
+    if (ga !== gb) return ga - gb;
+    return (a.section || '').localeCompare(b.section || '');
+  });
+
+
   /**
    * Merges any subjects present in classAssignments but missing from the
    * given map (e.g. subjects added after the previous timetable run).
@@ -55,8 +64,9 @@ export default function WizardPage() {
   const getClassNonBreakCount = (classId) => getClassPeriods(classId).filter(p => !p.isBreak).length;
 
   const [step, setStep] = useState(1);
-  const [selectedClass, setSelectedClass] = useState(classes[0]?.id ?? '');
-  const [previewClass, setPreviewClass] = useState(classes[0]?.id ?? '');
+  const [selectedClass, setSelectedClass] = useState(() => sortedClasses[0]?.id ?? '');
+  const [previewClass, setPreviewClass] = useState(() => sortedClasses[0]?.id ?? '');
+
   const [classSubjectMap, setClassSubjectMap] = useState(() => {
     // Restore from persisted periodsConfig if available, else compute default.
     // Always merge in any subjects added after the last generation.
@@ -74,10 +84,10 @@ export default function WizardPage() {
   // Recompute when DB data arrives (initial state is empty before HYDRATE)
   useEffect(() => {
     if (!dbLoaded || classes.length === 0) return;
-    // Update selectedClass/previewClass if not yet set
-    setSelectedClass(prev => prev || classes[0]?.id || '');
-    setPreviewClass(prev => prev || classes[0]?.id || '');
-    setSelectedClassIds(classes.map(c => c.id));
+    setSelectedClass(prev => prev || sortedClasses[0]?.id || '');
+    setPreviewClass(prev => prev || sortedClasses[0]?.id || '');
+    setSelectedClassIds(sortedClasses.map(c => c.id));
+
     // Recompute classSubjectMap from periodsConfig or defaults.
     // Merge in any subjects that were added after the last generation run.
     setClassSubjectMap(prev => {
@@ -140,16 +150,19 @@ export default function WizardPage() {
   };
 
   const handleApply = () => {
-    if (genMode === 'selected') {
-      // Merge: remove old slots for selected classes, keep others, add generated
-      const existingOther = schedule.filter(s => !selectedClassIds.includes(s.classId));
-      dispatch({ type: 'BULK_SET_SCHEDULE', payload: [...existingOther, ...generated.schedule] });
-    } else {
-      dispatch({ type: 'BULK_SET_SCHEDULE', payload: generated.schedule });
-    }
+    // ALWAYS merge: keep slots for classes NOT in the generated set, discard
+    // unlocked slots for classes that were generated, add the new slots.
+    const generatedClassIds = new Set(
+      generated.schedule.map(s => s.classId)
+    );
+    const existingOther = schedule.filter(
+      s => !generatedClassIds.has(s.classId)
+    );
+    dispatch({ type: 'BULK_SET_SCHEDULE', payload: [...existingOther, ...generated.schedule] });
     setSaved(true);
     setTimeout(() => navigate('/timetable'), 1200);
   };
+
 
   // Validation
   const validation = useMemo(() => {
@@ -163,10 +176,14 @@ export default function WizardPage() {
     });
     classes.forEach(cls => {
       (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
-        const hasAssignment = classAssignments.some(
+        const asgn = classAssignments.find(
           a => a.classId === cls.id && a.subjectId === req.subjectId
         );
-        if (!hasAssignment) {
+        // Require at least one teacher assigned (teacherIds[] or legacy teacherId)
+        const hasTeacher = asgn && (
+          (asgn.teacherIds?.length > 0) || !!asgn.teacherId
+        );
+        if (!hasTeacher) {
           const sub = subjects.find(s => s.id === req.subjectId);
           issues.push({ type: 'error', msg: `${cls.name}: no teacher assigned for ${sub?.name ?? req.subjectId}. Assign in Master Data → Classes.` });
         }
@@ -174,6 +191,7 @@ export default function WizardPage() {
     });
     return issues;
   }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount]);
+
 
   const staffingAnalysis = useMemo(
     () => analyzeStaffing(state, classSubjectMap),
@@ -253,14 +271,15 @@ export default function WizardPage() {
               </button>
             </div>
 
-            {/* Class tabs */}
+            {/* Class tabs — sorted numerically */}
             <div className="tabs">
-              {classes.map(cls => (
+              {sortedClasses.map(cls => (
                 <button key={cls.id} className={`tab-btn ${selectedClass === cls.id ? 'active' : ''}`} onClick={() => setSelectedClass(cls.id)}>
                   {cls.name}
                 </button>
               ))}
             </div>
+
 
             {selectedClass && (() => {
               const classNonBreakPeriods = getClassPeriods(selectedClass).filter(p => !p.isBreak);
@@ -317,11 +336,18 @@ export default function WizardPage() {
                                 const asgn = classAssignments.find(
                                   a => a.classId === selectedClass && a.subjectId === req.subjectId
                                 );
-                                const t = asgn ? teachers.find(t => t.id === asgn.teacherId) : null;
+                                // Support teacherIds[] (new) and legacy teacherId
+                                const primaryId = asgn?.teacherIds?.[0] || asgn?.teacherId;
+                                const t = primaryId ? teachers.find(t => t.id === primaryId) : null;
+                                const extraCount = (asgn?.teacherIds?.length || 0) - 1;
                                 return t
-                                  ? <span className="badge badge-green">{t.name.split(' ')[0]}</span>
+                                  ? <span className="badge badge-green">
+                                      {t.name.split(' ')[0]}
+                                      {extraCount > 0 && <span style={{ marginLeft: 3, opacity: .7 }}>+{extraCount}</span>}
+                                    </span>
                                   : <span style={{ color: 'var(--clr-red)', fontSize: '.8rem' }}>⚠ Not assigned</span>;
                               })()}
+
                             </td>
                           </tr>
                         );
@@ -391,9 +417,9 @@ export default function WizardPage() {
                       {selectedClassIds.length} of {classes.length} selected
                     </span>
                   </div>
-                  {/* Class chips */}
+                  {/* Class chips — sorted numerically */}
                   <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-                    {classes.map(cls => (
+                    {sortedClasses.map(cls => (
                       <label key={cls.id} style={{
                         display: 'flex', alignItems: 'center', gap: '.35rem', cursor: 'pointer',
                         padding: '.35rem .75rem', borderRadius: 'var(--r-lg)', fontSize: '.82rem',
@@ -410,6 +436,7 @@ export default function WizardPage() {
                       </label>
                     ))}
                   </div>
+
                 </div>
               )}
             </div>
