@@ -119,7 +119,16 @@ export default function ClassesPage() {
 
   // ── Grouped display ───────────────────────────────────────────────────────
   const grouped = GRADE_GROUPS
-    .map(g => ({ ...g, classes: state.classes.filter(c => c.gradeGroup === g.id) }))
+    .map(g => {
+      const gClasses = state.classes.filter(c => c.gradeGroup === g.id);
+      gClasses.sort((a, b) => {
+        const ga = parseInt(a.grade, 10) || 0;
+        const gb = parseInt(b.grade, 10) || 0;
+        if (ga !== gb) return ga - gb;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      return { ...g, classes: gClasses };
+    })
     .filter(g => g.classes.length > 0);
 
   const stepDefs = [
