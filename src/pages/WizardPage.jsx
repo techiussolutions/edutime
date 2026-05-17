@@ -136,9 +136,14 @@ export default function WizardPage() {
   };
 
   const handleGenerate = async () => {
+    if (!canGenerate) {
+      document.getElementById('validation-errors')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     setGenerating(true);
     try {
       await new Promise(r => setTimeout(r, 500));
+
       const opts = { classSubjectMap };
       if (genMode === 'selected') opts.selectedClassIds = selectedClassIds;
       const result = generateTimetable(state, opts);
@@ -382,9 +387,10 @@ export default function WizardPage() {
               <div><h2>Validation Report</h2><p>Check your configuration before generating the timetable.</p></div>
               <div style={{ display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
                 <button className="btn btn-ghost" onClick={() => setStep(1)}><ChevronLeft size={15} /> Back</button>
-                <button className="btn btn-primary" disabled={!canGenerate || generating} onClick={handleGenerate}>
+                <button className="btn btn-primary" disabled={generating} onClick={handleGenerate}>
                   {generating ? '⏳ Generating…' : <><Wand2 size={15} /> Generate Timetable</>}
                 </button>
+
               </div>
             </div>
 
@@ -453,7 +459,8 @@ export default function WizardPage() {
                 <Check size={18} /> All checks passed! Ready to generate.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', marginBottom: '1.25rem' }}>
+              <div id="validation-errors" style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', marginBottom: '1.25rem' }}>
+
                 {validation.map((v, i) => (
                   <div key={i} className={`alert ${v.type === 'error' ? 'alert-danger' : 'alert-warning'}`}>
                     <AlertTriangle size={15} /> {v.msg}
