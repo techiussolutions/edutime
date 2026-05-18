@@ -185,10 +185,11 @@ export default function SettingsPage() {
                           <TimePicker value={p.end} onChange={v => updatePeriod(p.period, 'end', v)} onBlur={toast} style={{ height: 32 }} />
                         </td>
                         <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
-                          <label className="toggle toggle-amber">
-                            <input type="checkbox" checked={p.isBreak} onChange={()=>toggleBreak(p.period)}/>
-                            <span className="toggle-track"/>
-                          </label>
+                          <select className="input input-sm" value={p.isBreak ? 'break' : 'teach'} style={{ width: 120, cursor: 'pointer', background: p.isBreak ? 'var(--clr-amber)' : 'var(--bg-card)', color: p.isBreak ? 'white' : 'var(--tx-main)', borderColor: p.isBreak ? 'var(--clr-amber)' : 'var(--border)', fontWeight: p.isBreak ? 600 : 400 }}
+                            onChange={() => toggleBreak(p.period)}>
+                            <option value="teach">📚 Teaching</option>
+                            <option value="break">☕ Break</option>
+                          </select>
                         </td>
                         <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
                           <div style={{ display:'flex', gap:'.25rem', justifyContent:'center' }}>
