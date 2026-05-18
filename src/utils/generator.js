@@ -99,8 +99,10 @@ export function generateTimetable(state, requirements) {
         if (orGroupLeaders.has(key)) return;
         orGroupLeaders.add(key);
       }
+      // If periodsPerWeek == activeDayCount, enforce at most 1 assignment per day
+      const maxPerDay = req.periodsPerWeek === activeDayKeys.length ? 1 : Infinity;
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
-        remaining: req.periodsPerWeek, orGroup });
+        remaining: req.periodsPerWeek, orGroup, maxPerDay, dayCount: {} });
     });
   });
 
@@ -158,9 +160,10 @@ export function generateTimetable(state, requirements) {
   }
 
   for (const { dayKey, dayIdx, period } of shuffle(slots)) {
-    // Get remaining demands, sorted by most-needed first (greedy), with random tiebreak
+    // Get remaining demands, sorted by most-needed first (greedy), with random tiebreak.
+    // Demands that have hit their per-day cap for this day are excluded.
     const pending = demands
-      .filter(d => d.remaining > 0)
+      .filter(d => d.remaining > 0 && (d.dayCount[dayIdx] || 0) < d.maxPerDay)
       .sort((a, b) => b.remaining - a.remaining || Math.random() - 0.5);
 
     // For this slot: pick an independent set — no two picks share a teacher or class
@@ -229,6 +232,7 @@ export function generateTimetable(state, requirements) {
       usedClassesThisSlot.add(demand.classId);
       teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
       demand.remaining--;
+      demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
       // Mark sibling teachers busy
       if (demand.orGroup && alternatives) {
