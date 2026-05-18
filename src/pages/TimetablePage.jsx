@@ -579,8 +579,21 @@ export default function TimetablePage() {
           return (
             <div key={cid} className="print-page">
               <div className="print-page-header">
-                <h2>{school?.name || 'School Timetable'}</h2>
-                <p>Class: {cls.name}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <h2 style={{ fontSize: '1.35rem', fontWeight: 900, margin: 0, color: '#000000', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                      {school?.name || 'School Timetable'}
+                    </h2>
+                    {school?.academicYear && (
+                      <p style={{ margin: '2px 0 0', fontSize: '.75rem', color: '#333333', fontWeight: 500 }}>
+                        Academic Year: {school.academicYear}
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ padding: '.4rem .9rem', border: '2.5px solid #000000', background: '#f3f4f6', borderRadius: '4px', fontWeight: 900, fontSize: '1.05rem', textTransform: 'uppercase', color: '#000000', letterSpacing: '0.04em', boxShadow: '2px 2px 0px #000000', display: 'inline-block' }}>
+                    CLASS: {cls.name}
+                  </div>
+                </div>
               </div>
               <table className="tt-table print-tt">
                 <thead>
@@ -608,8 +621,12 @@ export default function TimetablePage() {
                             <div className="tt-slot">
                               {slot ? (
                                 <>
-                                  <span className="sub">{s?.code || s?.name}</span>
-                                  <span className="teacher">{t?.name ?? '—'}</span>
+                                  <span className="sub" style={{ fontWeight: 800, fontSize: '.75rem', display: 'block', textTransform: 'uppercase' }}>
+                                    {s?.code || s?.name}
+                                  </span>
+                                  <span className="teacher" style={{ fontSize: '.62rem', display: 'block', marginTop: '2px', color: '#333333' }}>
+                                    {t?.name ?? '—'}
+                                  </span>
                                 </>
                               ) : null}
                             </div>
@@ -632,8 +649,21 @@ export default function TimetablePage() {
           return (
             <div key={tid} className="print-page">
               <div className="print-page-header">
-                <h2>{school?.name || 'School Timetable'}</h2>
-                <p>Teacher: {teacher.name}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <h2 style={{ fontSize: '1.35rem', fontWeight: 900, margin: 0, color: '#000000', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                      {school?.name || 'School Timetable'}
+                    </h2>
+                    {school?.academicYear && (
+                      <p style={{ margin: '2px 0 0', fontSize: '.75rem', color: '#333333', fontWeight: 500 }}>
+                        Academic Year: {school.academicYear}
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ padding: '.4rem .9rem', border: '2.5px solid #000000', background: '#f3f4f6', borderRadius: '4px', fontWeight: 900, fontSize: '1.05rem', textTransform: 'uppercase', color: '#000000', letterSpacing: '0.04em', boxShadow: '2px 2px 0px #000000', display: 'inline-block' }}>
+                    TEACHER: {teacher.name}
+                  </div>
+                </div>
               </div>
               <table className="tt-table print-tt">
                 <thead>
@@ -665,8 +695,12 @@ export default function TimetablePage() {
                             <div className="tt-slot">
                               {slot ? (
                                 <>
-                                  <span className="sub">{s?.code || s?.name}</span>
-                                  <span className="cls">{cls?.name ?? '—'}</span>
+                                  <span className="sub" style={{ fontWeight: 800, fontSize: '.75rem', display: 'block', textTransform: 'uppercase' }}>
+                                    {s?.code || s?.name}
+                                  </span>
+                                  <span className="cls" style={{ fontSize: '.62rem', display: 'block', marginTop: '2px', color: '#333333' }}>
+                                    {cls?.name ?? '—'}
+                                  </span>
                                 </>
                               ) : null}
                             </div>
