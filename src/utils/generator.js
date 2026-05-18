@@ -153,15 +153,23 @@ export function generateTimetable(state, requirements) {
   const warnings = [];
 
   // ── Step 3: Slot fill ─────────────────────────────────────────────────────
-  // Iterate slots in random order for variety
-  const slots = [];
+  // Build slots in ROUND-ROBIN day order: visit one slot per day before revisiting
+  // any day. This guarantees subjects are spread across days before doubling up.
+  // Periods within each day are shuffled for variety.
+  const slotsByDay = {};
   for (const dayKey of activeDayKeys) {
-    for (const period of globalNonBreak) {
-      slots.push({ dayKey, dayIdx: DAY_KEY_TO_IDX[dayKey], period });
+    const dayIdx = DAY_KEY_TO_IDX[dayKey];
+    slotsByDay[dayKey] = shuffle(globalNonBreak.map(period => ({ dayKey, dayIdx, period })));
+  }
+  const maxRounds = Math.max(...activeDayKeys.map(d => slotsByDay[d].length));
+  const slots = [];
+  for (let round = 0; round < maxRounds; round++) {
+    for (const dayKey of shuffle([...activeDayKeys])) {
+      if (round < slotsByDay[dayKey].length) slots.push(slotsByDay[dayKey][round]);
     }
   }
 
-  for (const { dayKey, dayIdx, period } of shuffle(slots)) {
+  for (const { dayKey, dayIdx, period } of slots) {
     // Get remaining demands, sorted by most-needed first (greedy), with random tiebreak.
     // Demands that have hit their per-day cap for this day are excluded.
     const pending = demands
