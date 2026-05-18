@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Calendar, CalendarClock, UserCheck, Users, BookOpen,
   Settings, LogOut, Bell, ChevronRight, GraduationCap, Menu, X, CalendarCheck,
-  ShieldAlert, Globe, School
+  ShieldAlert, Globe, School, ClipboardList
 } from 'lucide-react';
 
 const NAV = [
@@ -19,6 +19,7 @@ const MASTER = [
   { to: '/master/teachers',      label: 'Teachers',     icon: Users },
   { to: '/master/classes',       label: 'Classes',      icon: GraduationCap },
   { to: '/master/availability',  label: 'Availability', icon: CalendarCheck },
+  { to: '/master/staffing',      label: 'Staffing Analysis', icon: ClipboardList },
 ];
 
 export default function AppShell() {

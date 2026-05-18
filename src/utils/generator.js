@@ -373,3 +373,24 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       return (order[a.status] - order[b.status]) || (b.totalPeriodsNeeded - a.totalPeriodsNeeded);
     });
 }
+
+/**
+ * Merges any subjects present in classAssignments but missing from the
+ * given map (e.g. subjects added after the previous timetable run).
+ * New entries get periodsPerWeek = 0 so the user can set them explicitly.
+ */
+export function mergeNewSubjects(map, clsList, assignments) {
+  const merged = {};
+  clsList.forEach(cls => {
+    const existing = map[cls.id] || [];
+    const existingIds = new Set(existing.map(r => r.subjectId));
+    const assignedSubjectIds = assignments
+      .filter(a => a.classId === cls.id && a.subjectId)
+      .map(a => a.subjectId);
+    const newEntries = assignedSubjectIds
+      .filter(sid => !existingIds.has(sid))
+      .map(sid => ({ subjectId: sid, periodsPerWeek: 0 }));
+    merged[cls.id] = newEntries.length > 0 ? [...existing, ...newEntries] : existing;
+  });
+  return merged;
+}

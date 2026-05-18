@@ -22,6 +22,7 @@ const UserManagementPage    = lazy(() => import('./pages/admin/UserManagementPag
 const SchoolsManagementPage = lazy(() => import('./pages/platform/SchoolsManagementPage'));
 const PlatformDashboard     = lazy(() => import('./pages/platform/PlatformDashboard'));
 const PlatformUsersPage     = lazy(() => import('./pages/platform/PlatformUsersPage'));
+const StaffingAnalysisPage  = lazy(() => import('./pages/master/StaffingAnalysisPage'));
 
 /* ── Auth guard: must be logged in ────────────────────────── */
 function AuthGuard({ children }) {
@@ -101,6 +102,7 @@ function AppRoutes() {
             <Route path="classes"      element={<PermGuard perm="manageMasterData"><ClassesPage /></PermGuard>} />
             <Route path="subjects"     element={<PermGuard perm="manageMasterData"><SubjectsPage /></PermGuard>} />
             <Route path="availability" element={<PermGuard perm="manageMasterData"><TeacherAvailabilityPage /></PermGuard>} />
+            <Route path="staffing"     element={<PermGuard perm="manageMasterData"><StaffingAnalysisPage /></PermGuard>} />
           </Route>
 
           {/* Admin only */}
