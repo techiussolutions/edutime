@@ -190,7 +190,7 @@ export default function WizardPage() {
 
 
   const staffingAnalysis = useMemo(
-    () => analyzeStaffing(state, classSubjectMap, genMode === 'selected' ? selectedClassIds : null),
+    () => (analyzeStaffing(state, classSubjectMap, genMode === 'selected' ? selectedClassIds : null).bySubject || []),
     [state, classSubjectMap, genMode, selectedClassIds]
   );
 
@@ -508,13 +508,18 @@ export default function WizardPage() {
                     </div>
                     <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
                       {sub.teachers.map((t, i) => {
-                        const pct = Math.min(100, Math.round((t.periodsAssigned / t.maxPeriods) * 100));
+                        const pct = Math.min(100, Math.round((t.totalLoad / t.maxPeriods) * 100));
                         const barColor = t.status === 'critical' ? 'var(--clr-red)' : t.status === 'warn' ? 'var(--clr-amber)' : 'var(--clr-green)';
                         return (
                           <div key={t.teacherId} style={{ flex: '1 1 200px', padding: '.625rem 1rem', borderRight: i < sub.teachers.length - 1 ? '1px solid var(--border)' : 'none' }}>
                             <div style={{ fontWeight: 600, fontSize: '.82rem' }}>{t.teacherName}</div>
                             <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)', marginBottom: '.35rem' }}>
-                              {t.classes.join(', ')} · {t.periodsAssigned}/{t.maxPeriods} periods/wk
+                              {t.classes.join(', ')} · {t.periodsAssigned}p this subject
+                              {t.totalLoad !== t.periodsAssigned && (
+                                <span style={{ marginLeft: '.25rem', color: barColor, fontWeight: 700 }}>
+                                  · Total {Math.round(t.totalLoad * 10) / 10}/{t.maxPeriods}
+                                </span>
+                              )}
                             </div>
                             <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                               <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width .3s' }}/>

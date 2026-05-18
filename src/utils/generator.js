@@ -421,6 +421,34 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       const order = { critical: 0, warn: 1, ok: 2 };
       return (order[a.status] - order[b.status]) || (b.totalPeriodsNeeded - a.totalPeriodsNeeded);
     });
+
+  // Teacher-level summary: aggregate across ALL subjects
+  const teacherSummary = teachers
+    .filter(t => teacherTotalPeriods[t.id] > 0)
+    .map(t => {
+      const totalLoad = teacherTotalPeriods[t.id] || 0;
+      const overloaded = totalLoad > t.maxPeriods;
+      // Collect which subjects and classes this teacher covers
+      const subjectBreakdown = subjectResult
+        .filter(s => s.teachers.some(st => st.teacherId === t.id))
+        .map(s => {
+          const st = s.teachers.find(st => st.teacherId === t.id);
+          return { subjectName: s.subjectName, subjectCode: s.subjectCode, periods: st.periodsAssigned, classes: st.classes };
+        });
+      return {
+        teacherId: t.id,
+        teacherName: t.name,
+        totalLoad,
+        maxPeriods: t.maxPeriods,
+        remaining: t.maxPeriods - totalLoad,
+        utilisationPct: Math.min(100, Math.round((totalLoad / t.maxPeriods) * 100)),
+        status: overloaded ? 'critical' : totalLoad > t.maxPeriods * 0.8 ? 'warn' : 'ok',
+        subjectBreakdown,
+      };
+    })
+    .sort((a, b) => b.utilisationPct - a.utilisationPct);
+
+  return { bySubject: subjectResult, byTeacher: teacherSummary };
 }
 
 /**
