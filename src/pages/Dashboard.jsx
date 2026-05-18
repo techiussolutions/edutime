@@ -54,7 +54,7 @@ export default function Dashboard() {
       {showSetup && <SetupWizard onComplete={() => setShowSetup(false)} />}
       <div className="page-header">
         <div>
-          <h2>Good morning 👋</h2>
+          <h2>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'} 👋</h2>
           <p>{state.school.name} • {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
       </div>
