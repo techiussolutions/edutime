@@ -272,6 +272,90 @@ export function generateTimetable(state, requirements) {
     }
   }
 
+  // ── Step 3b: Relaxed pass — fill any still-unfilled demands ignoring dayBudget ──
+  // Runs only when the main pass left demands unfilled (e.g. all budgeted-day slots
+  // were claimed by other subjects first). Iterates the same slot list; classBusy
+  // prevents double-booking, so this only touches genuinely empty class slots.
+  if (demands.some(d => d.remaining > 0)) {
+    for (const { dayKey, dayIdx, period } of slots) {
+      const pending2 = demands
+        .filter(d => d.remaining > 0)   // no dayBudget restriction
+        .sort((a, b) => b.remaining - a.remaining || Math.random() - 0.5);
+      if (!pending2.length) break;
+
+      const usedTeachersThisSlot = new Set();
+      const usedClassesThisSlot = new Set();
+
+      for (const demand of pending2) {
+        if (usedClassesThisSlot.has(demand.classId)) continue;
+        if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
+        if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+
+        const freeTeachers = demand.teacherIds.filter(tid =>
+          (demand.concurrent || !teacherBusy.has(`${tid}_${dayIdx}_${period}`)) &&
+          (demand.concurrent || !usedTeachersThisSlot.has(tid)) &&
+          teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+        );
+        if (!freeTeachers.length) continue;
+
+        const chosenTeacherId = freeTeachers.reduce((best, tid) =>
+          (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
+        );
+        const teacher = teachers.find(t => t.id === chosenTeacherId);
+        if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+
+        // Resolve OR-group siblings
+        let alternatives = null;
+        if (demand.orGroup) {
+          const key = `${demand.classId}__${demand.orGroup}`;
+          const siblings = orGroupIndex[key] || [];
+          const allSiblingAlts = siblings.map(sib => {
+            const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+              !usedTeachersThisSlot.has(tid) &&
+              teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+            );
+            const chosen = freeSibTeachers.length
+              ? freeSibTeachers.reduce((best, tid) =>
+                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              : null;
+            return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+          });
+          if (!allSiblingAlts.every(s => s.free)) continue;
+          alternatives = allSiblingAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId }));
+        }
+
+        const slotId = `sch_${demand.classId}_${dayIdx}_${period}`;
+        schedule.push({
+          id: slotId,
+          classId: demand.classId, day: dayIdx, period,
+          teacherId: chosenTeacherId, subjectId: demand.subjectId,
+          alternatives,
+        });
+        teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+        classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
+        usedTeachersThisSlot.add(chosenTeacherId);
+        usedClassesThisSlot.add(demand.classId);
+        teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        demand.remaining--;
+        demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+
+        if (demand.orGroup && alternatives) {
+          for (const sib of alternatives) {
+            if (sib.teacherId === chosenTeacherId) continue;
+            teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+            usedTeachersThisSlot.add(sib.teacherId);
+            teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+            const sibDemand = demands.find(
+              d => d.classId === demand.classId && d.subjectId === sib.subjectId
+            );
+            if (sibDemand) sibDemand.remaining--;
+          }
+        }
+      }
+    }
+  }
+
   // ── Step 4: Warnings ──────────────────────────────────────────────────────
   unassigned.forEach(msg => warnings.push(msg));
 
