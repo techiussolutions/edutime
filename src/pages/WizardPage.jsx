@@ -176,14 +176,18 @@ export default function WizardPage() {
   // Validation
   const validation = useMemo(() => {
     const issues = [];
-    classes.forEach(cls => {
+    const targetClasses = genMode === 'selected'
+      ? classes.filter(c => selectedClassIds.includes(c.id))
+      : classes;
+
+    targetClasses.forEach(cls => {
       const classNonBreak = getClassNonBreakCount(cls.id);
       const totalSlots = classNonBreak * activeDayCount;
       const total = (classSubjectMap[cls.id] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
       if (total > totalSlots) issues.push({ type: 'error', msg: `${cls.name}: needs ${total} periods but only ${totalSlots} slots available (${classNonBreak} periods/day × ${activeDayCount} days).` });
       else if (total < totalSlots) issues.push({ type: 'warn', msg: `${cls.name}: ${totalSlots - total} slot(s) will remain unassigned.` });
     });
-    classes.forEach(cls => {
+    targetClasses.forEach(cls => {
       (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
         const asgn = classAssignments.find(
           a => a.classId === cls.id && a.subjectId === req.subjectId
@@ -199,12 +203,12 @@ export default function WizardPage() {
       });
     });
     return issues;
-  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount]);
+  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount, genMode, selectedClassIds]);
 
 
   const staffingAnalysis = useMemo(
-    () => analyzeStaffing(state, classSubjectMap),
-    [state, classSubjectMap]
+    () => analyzeStaffing(state, classSubjectMap, genMode === 'selected' ? selectedClassIds : null),
+    [state, classSubjectMap, genMode, selectedClassIds]
   );
 
   const canGenerate = validation.filter(v => v.type === 'error').length === 0;

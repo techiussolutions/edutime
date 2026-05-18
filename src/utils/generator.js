@@ -296,14 +296,18 @@ export function getDefaultRequirements(classes, subjects, activeDayCount, classA
  *   status: 'ok' | 'warn' | 'critical'
  * }]
  */
-export function analyzeStaffing(state, classSubjectMap) {
+export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   const { teachers, classes, subjects, classAssignments = [] } = state;
+
+  const targetClasses = selectedClassIds
+    ? classes.filter(c => selectedClassIds.includes(c.id))
+    : classes;
 
   // Per subject — collect all demands and assigned teachers
   const subjectData = {};
   subjects.forEach(sub => { subjectData[sub.id] = { totalPeriods: 0, teacherPeriods: {}, teacherClasses: {} }; });
 
-  classes.forEach(cls => {
+  targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
       const sd = subjectData[req.subjectId];
