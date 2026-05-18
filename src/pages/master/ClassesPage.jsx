@@ -30,6 +30,7 @@ export default function ClassesPage() {
   const [useCustom,      setUseCustom]      = useState(false);
   const [customPeriods,  setCustomPeriods]  = useState([]);
   const [confirmDel,     setConfirmDel]     = useState(null);
+  const [matrixModal,    setMatrixModal]    = useState(null); // { grade, classes }
 
 
   const applicableSubjects = useMemo(() =>
@@ -117,7 +118,7 @@ export default function ClassesPage() {
   const grouped = uniqueGrades.map(grade => {
     const gClasses = state.classes.filter(c => c.grade === grade);
     gClasses.sort((a, b) => (a.section || '').localeCompare(b.section || ''));
-    return { id: `grade_${grade}`, label: `Grade ${grade}`, classes: gClasses };
+    return { id: `grade_${grade}`, label: `Grade ${grade}`, classes: gClasses, grade };
   });
 
   const stepDefs = [
@@ -135,9 +136,14 @@ export default function ClassesPage() {
 
       {grouped.map(group => (
         <div key={group.id} style={{ marginBottom: '1.5rem' }}>
-          <h4 style={{ marginBottom: '.75rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+          <h4 style={{ marginBottom: '.75rem', display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
             <GraduationCap size={16} color="var(--clr-primary)"/> {group.label}
             <span className="badge badge-indigo">{group.classes.length}</span>
+            {group.classes.length > 0 && (
+              <button className="btn btn-outline btn-sm ml-auto" onClick={() => setMatrixModal({ grade: group.grade, classes: group.classes })} style={{ padding: '.25rem .5rem', fontSize: '.75rem', gap: '.3rem' }}>
+                <BookOpen size={12}/> Compare Divisions
+              </button>
+            )}
           </h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '.75rem' }}>
             {group.classes.map(cls => {
@@ -578,6 +584,124 @@ export default function ClassesPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancel</button>
               <button className="btn btn-danger" onClick={() => { dispatch({ type: 'DELETE_CLASS', payload: confirmDel.id }); setConfirmDel(null); }}>Delete</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Division Comparison Matrix Modal */}
+      {matrixModal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setMatrixModal(null)}>
+          <div className="modal modal-lg" style={{ maxWidth: 840 }}>
+            <div className="modal-header">
+              <div>
+                <h3>Grade {matrixModal.grade} — Division Comparison Matrix</h3>
+                <p style={{ fontSize: '.8rem', color: 'var(--tx-muted)', margin: 0 }}>Compare subject mapping and teacher assignments across all sections</p>
+              </div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setMatrixModal(null)}>✕</button>
+            </div>
+            
+            <div className="modal-body" style={{ padding: '1.5rem' }}>
+              <div className="table-wrap" style={{ maxHeight: '60vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-muted)' }}>
+                      <th style={{ padding: '.75rem 1rem', width: 220, borderBottom: '1px solid var(--border)' }}>Subject (Code)</th>
+                      {matrixModal.classes.map(cls => (
+                        <th key={cls.id} style={{ padding: '.75rem 1rem', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>Section {cls.section}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // Get all subjects applicable to at least one class/section in this grade
+                      const gradeClassIds = matrixModal.classes.map(c => c.id);
+                      const gradeSubjects = subjects.filter(sub => 
+                        (sub.applicableClasses || []).some(cid => gradeClassIds.includes(cid))
+                      );
+
+                      if (gradeSubjects.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={matrixModal.classes.length + 1} style={{ textAlign: 'center', padding: '2rem', color: 'var(--tx-muted)' }}>
+                              No subjects are currently mapped to any division in this grade. Please assign classes to subjects.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return gradeSubjects.map(sub => {
+                        return (
+                          <tr key={sub.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '.875rem 1rem', fontWeight: 600 }}>
+                              {sub.name} <span style={{ fontSize: '.75rem', color: 'var(--tx-muted)', fontWeight: 400 }}>({sub.code})</span>
+                            </td>
+                            {matrixModal.classes.map(cls => {
+                              const isMapped = (sub.applicableClasses || []).includes(cls.id);
+                              
+                              if (!isMapped) {
+                                return (
+                                  <td key={cls.id} style={{ padding: '.875rem 1rem', textAlign: 'center' }}>
+                                    <span className="badge badge-gray" style={{ opacity: 0.6, fontSize: '.75rem', display: 'inline-flex', gap: '.25rem' }}>
+                                      ➖ Not Added
+                                    </span>
+                                  </td>
+                                );
+                              }
+
+                              const assignment = classAssignments.find(a => a.classId === cls.id && a.subjectId === sub.id);
+                              const teacherIds = assignment?.teacherIds?.length ? assignment.teacherIds : (assignment?.teacherId ? [assignment.teacherId] : []);
+                              const hasTeacher = teacherIds.length > 0;
+
+                              if (hasTeacher) {
+                                const teacherNames = teacherIds
+                                  .map(tid => teachers.find(t => t.id === tid)?.name?.split(' ')[0])
+                                  .filter(Boolean)
+                                  .join(', ');
+                                
+                                return (
+                                  <td key={cls.id} style={{ padding: '.875rem 1rem', textAlign: 'center' }}>
+                                    <span className="badge badge-green" style={{ fontSize: '.75rem', display: 'inline-flex', gap: '.25rem' }}>
+                                      ✔️ {teacherNames || 'Assigned'}
+                                    </span>
+                                  </td>
+                                );
+                              } else {
+                                return (
+                                  <td key={cls.id} style={{ padding: '.875rem 1rem', textAlign: 'center' }}>
+                                    <span className="badge badge-red" style={{ fontSize: '.75rem', display: 'inline-flex', gap: '.25rem', fontWeight: 700 }}>
+                                      ⚠️ Missing Teacher
+                                    </span>
+                                  </td>
+                                );
+                              }
+                            })}
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.25rem', padding: '0.75rem', borderRadius: 'var(--r-md)', background: 'var(--bg-muted)', flexWrap: 'wrap', fontSize: '.8rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
+                  <span className="badge badge-green" style={{ pointerEvents: 'none' }}>✔️ [Name]</span>
+                  <span style={{ color: 'var(--tx-muted)' }}>Mapped & Teacher Assigned</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
+                  <span className="badge badge-red" style={{ pointerEvents: 'none' }}>⚠️ Missing Teacher</span>
+                  <span style={{ color: 'var(--tx-muted)' }}>Mapped, but Teacher is unassigned</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
+                  <span className="badge badge-gray" style={{ pointerEvents: 'none', opacity: 0.6 }}>➖ Not Added</span>
+                  <span style={{ color: 'var(--tx-muted)' }}>Subject is not mapped to this Section</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setMatrixModal(null)}>Close</button>
             </div>
           </div>
         </div>,
