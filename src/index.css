@@ -860,28 +860,26 @@ tbody tr:hover { background: var(--bg-muted); }
   .page-content { display: block !important; width: 100% !important; height: auto !important; padding: 0 !important; overflow: visible !important; }
   .anim-fade-up { width: 100% !important; height: auto !important; overflow: visible !important; }
 
-  /* Force tables to fit A4 landscape — no background colors, borders always on top */
+  /* Tables: collapse so every border is shared/merged, no gaps possible.
+     All backgrounds forced white — nothing can hide the black border. */
   .print-tt, .tt-table {
     min-width: 0 !important;
     width: 100% !important;
     table-layout: fixed !important;
-    font-size: .65rem;
-    border-collapse: separate !important;
+    font-size: .65rem !important;
+    border-collapse: collapse !important;
     border-spacing: 0 !important;
-    border: 1.5px solid #000 !important;
     word-wrap: break-word;
     overflow-wrap: break-word;
     background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .print-tt th, .print-tt td,
   .tt-table th, .tt-table td {
     padding: .35rem .3rem !important;
-    border-right: 1.5px solid #000 !important;
-    border-bottom: 1.5px solid #000 !important;
-    border-top: none !important;
-    border-left: none !important;
+    border: 2px solid #000 !important;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: normal !important;
     word-break: break-word;
     text-align: center;
@@ -890,44 +888,43 @@ tbody tr:hover { background: var(--bg-muted); }
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  /* First column and first row get full outer border via the table border */
   .print-tt th.day-col, .tt-table th.day-col {
-    width: 60px !important;
+    width: 56px !important;
     font-weight: 800 !important;
     font-size: .68rem !important;
   }
   .print-tt thead th, .tt-table thead th {
     font-size: .68rem !important;
     font-weight: 800 !important;
-    line-height: 1.3;
+    line-height: 1.3 !important;
   }
   .print-tt thead th span, .tt-table thead th span {
     font-size: .55rem !important;
     font-weight: 500 !important;
   }
-  .tt-cell.assigned, .tt-cell.break { background: #fff !important; }
+  /* All cell variants: pure white, no exceptions */
+  .tt-cell, .tt-cell.assigned, .tt-cell.break {
+    background: #fff !important;
+  }
   .tt-slot {
     padding: .05rem 0 !important;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
     gap: 1px !important;
   }
   .tt-slot .sub {
     font-size: .72rem !important;
     font-weight: 800 !important;
     color: #000 !important;
+    display: block !important;
   }
-  .tt-slot .teacher {
-    font-size: .6rem !important;
-    font-weight: 500 !important;
-    color: #000 !important;
-  }
-  .tt-slot .cls {
+  .tt-slot .teacher, .tt-slot .cls {
     font-size: .6rem !important;
     font-weight: 600 !important;
     color: #000 !important;
+    display: block !important;
   }
   .tt-slot .break-label {
     font-size: .65rem !important;
@@ -935,8 +932,8 @@ tbody tr:hover { background: var(--bg-muted); }
     color: #000 !important;
   }
 
-  /* Page setup — A4 landscape, tight margins so table fits without cropping */
-  @page { size: A4 landscape; margin: 6mm 8mm; }
+  /* A4 landscape with generous margins so nothing gets cropped */
+  @page { size: A4 landscape; margin: 10mm 8mm; }
 }
 
 
