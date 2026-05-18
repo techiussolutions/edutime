@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -20,13 +20,36 @@ export default function TimetablePage() {
   } = state;
 
   const [viewMode,       setViewMode]       = useState('class');
-  const [selectedClass,  setSelectedClass]  = useState(classes[0]?.id);
-  const [selectedTeacher,setSelectedTeacher]= useState(teachers[0]?.id);
+  const [selectedClass,  setSelectedClass]  = useState('');
+  const [selectedTeacher,setSelectedTeacher]= useState('');
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
   const [showPrintModal,  setShowPrintModal]  = useState(false);
   const [printClassIds,   setPrintClassIds]   = useState([]);
   const [confirmClear,    setConfirmClear]    = useState(null); // classId to clear, or null
+
+  // Sort classes numerically by grade, then section alphabetically
+  const sortedClasses = useMemo(() => {
+    return [...classes].sort((a, b) => {
+      const ga = parseInt(a.grade, 10) || 0;
+      const gb = parseInt(b.grade, 10) || 0;
+      if (ga !== gb) return ga - gb;
+      return (a.section || '').localeCompare(b.section || '');
+    });
+  }, [classes]);
+
+  // Keep selectedClass and selectedTeacher valid when data loads
+  useEffect(() => {
+    if (sortedClasses.length > 0 && !selectedClass) {
+      setSelectedClass(sortedClasses[0].id);
+    }
+  }, [sortedClasses, selectedClass]);
+
+  useEffect(() => {
+    if (teachers.length > 0 && !selectedTeacher) {
+      setSelectedTeacher(teachers[0].id);
+    }
+  }, [teachers, selectedTeacher]);
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
 
@@ -185,33 +208,64 @@ export default function TimetablePage() {
       </div>
 
       {/* Controls */}
-      <div className="card card-body" style={{ marginBottom:'1rem', display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
-        <div className="tabs" style={{ margin:0, borderBottom:'none' }}>
-          <button className={`tab-btn ${viewMode==='class'?'active':''}`} onClick={()=>setViewMode('class')}>Class View</button>
-          <button className={`tab-btn ${viewMode==='teacher'?'active':''}`} onClick={()=>setViewMode('teacher')}>Teacher View</button>
-        </div>
-        <div style={{ flex:1 }}/>
-        {viewMode==='class'
-          ? <>
-              <select className="input" style={{width:200}} value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>
-                {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {canEdit && schedule.some(s => s.classId===selectedClass && !lockedSlots.includes(s.id)) && (
-                <button className="btn btn-outline btn-sm" style={{ color:'var(--clr-red)', borderColor:'var(--clr-red)' }}
-                  onClick={() => setConfirmClear(selectedClass)} title="Clear this class's unlocked slots">
-                  <Trash2 size={13}/> Clear Class
-                </button>
-              )}
-            </>
-          : <select className="input" style={{width:200}} value={selectedTeacher} onChange={e=>setSelectedTeacher(e.target.value)}>
+      <div className="card card-body" style={{ marginBottom:'1rem', display:'flex', flexDirection: 'column', gap:'1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+          <div className="tabs" style={{ margin:0, borderBottom:'none' }}>
+            <button className={`tab-btn ${viewMode==='class'?'active':''}`} onClick={()=>setViewMode('class')}>Class View</button>
+            <button className={`tab-btn ${viewMode==='teacher'?'active':''}`} onClick={()=>setViewMode('teacher')}>Teacher View</button>
+          </div>
+          
+          <div style={{ flex:1 }}/>
+          
+          {viewMode==='class' && canEdit && schedule.some(s => s.classId===selectedClass && !lockedSlots.includes(s.id)) && (
+            <button className="btn btn-outline btn-sm" style={{ color:'var(--clr-red)', borderColor:'var(--clr-red)', gap: '.25rem' }}
+              onClick={() => setConfirmClear(selectedClass)} title="Clear this class's unlocked slots">
+              <Trash2 size={13}/> Clear Class
+            </button>
+          )}
+
+          {viewMode==='teacher' && (
+            <select className="input" style={{width:200}} value={selectedTeacher} onChange={e=>setSelectedTeacher(e.target.value)}>
               {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-        }
-        <div style={{ display:'flex', alignItems:'center', gap:'.75rem', fontSize:'.78rem', color:'var(--tx-muted)' }}>
-          <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'#f0fdf4', border:'1px solid #86efac', marginRight:4 }}/>Assigned</span>
-          <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'#fffbeb', border:'1px solid #fcd34d', marginRight:4 }}/><Lock size={9} style={{ marginRight:4 }}/>Locked</span>
-          <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'var(--bg-muted)', border:'1px solid var(--border)', marginRight:4 }}/>Break</span>
+          )}
+
+          <div style={{ display:'flex', alignItems:'center', gap:'.75rem', fontSize:'.78rem', color:'var(--tx-muted)' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'#f0fdf4', border:'1px solid #86efac', marginRight:4 }}/>Assigned</span>
+            <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'#fffbeb', border:'1px solid #fcd34d', marginRight:4 }}/><Lock size={9} style={{ marginRight:4 }}/>Locked</span>
+            <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'var(--bg-muted)', border:'1px solid var(--border)', marginRight:4 }}/>Break</span>
+          </div>
         </div>
+
+        {viewMode==='class' && (
+          <div style={{ 
+            display: 'flex', 
+            gap: '.5rem', 
+            flexWrap: 'wrap', 
+            paddingTop: '.75rem', 
+            borderTop: '1px solid var(--border)',
+            alignItems: 'center' 
+          }}>
+            <span style={{ fontSize: '.8rem', color: 'var(--tx-muted)', fontWeight: 600, marginRight: '.5rem' }}>Select Class:</span>
+            {sortedClasses.map(c => (
+              <button
+                key={c.id}
+                className={`btn btn-sm ${selectedClass === c.id ? 'btn-primary' : 'btn-outline'}`}
+                style={{
+                  padding: '.35rem .85rem',
+                  fontSize: '.8rem',
+                  fontWeight: 600,
+                  borderRadius: 'var(--r-md)',
+                  minWidth: '60px',
+                  textAlign: 'center'
+                }}
+                onClick={() => setSelectedClass(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Confirm clear class modal */}
