@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/AppStore';
+import { formatAMPM } from '../utils/formatTime';
 import { CalendarClock, Printer } from 'lucide-react';
 
 const DAY_IDX = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5 };
@@ -96,7 +97,7 @@ export default function DailyTimetablePage() {
                   {effectivePeriods.map(p => (
                     <th key={p.period}>
                       {p.label}{p.isBreak ? ' 🫖' : ''}
-                      <br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '.72rem' }}>{p.start}–{p.end}</span>
+                      <br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '.72rem' }}>{formatAMPM(p.start)}–{formatAMPM(p.end)}</span>
                     </th>
                   ))}
                 </tr>

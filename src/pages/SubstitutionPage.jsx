@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { getSuggestedSubstitutes } from '../utils/engine';
+import { formatAMPM } from '../utils/formatTime';
 import { UserMinus, Check, Clock, RotateCcw, Printer } from 'lucide-react';
 
 const LEAVE_TYPES = ['Sick Leave','Casual Leave','Comp Off','Training','Personal Leave'];
@@ -153,7 +154,7 @@ export default function SubstitutionPage() {
                                   P{slot.period}
                                 </div>
                                 <div>
-                                  <span style={{ fontWeight:600, fontSize:'.875rem' }}>{periodInfo?.start} – {periodInfo?.end}</span>
+                                  <span style={{ fontWeight:600, fontSize:'.875rem' }}>{formatAMPM(periodInfo?.start)} – {formatAMPM(periodInfo?.end)}</span>
                                   <span style={{ color:'var(--tx-muted)', fontSize:'.8rem', marginLeft:'.5rem' }}>· {cls?.name} · {displaySub?.name}</span>
                                 </div>
                               </div>

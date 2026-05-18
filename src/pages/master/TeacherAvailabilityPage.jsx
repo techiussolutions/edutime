@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../store/AppStore';
+import { formatAMPM } from '../../utils/formatTime';
 import { CalendarCheck, RotateCcw, CheckSquare, Square, Search } from 'lucide-react';
 
 const DAY_IDX = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
@@ -224,7 +225,7 @@ export default function TeacherAvailabilityPage() {
                       <tr key={p.period} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '.5rem 1rem' }}>
                           <div style={{ fontWeight: 600, fontSize: '.85rem' }}>{p.label}</div>
-                          <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{p.start} – {p.end}</div>
+                          <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{formatAMPM(p.start)} – {formatAMPM(p.end)}</div>
                         </td>
                         {activeDays.map(day => {
                           const isAvail = getAvail(selectedTeacherId, day, p.period);

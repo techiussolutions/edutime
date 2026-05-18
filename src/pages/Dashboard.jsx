@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
+import { formatAMPM } from '../utils/formatTime';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, UserMinus, AlertTriangle, CalendarCheck,
@@ -175,7 +176,7 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   {state.settings.periodTimings.map(p => (
-                    <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{p.start}</span></th>
+                    <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{formatAMPM(p.start)}–{formatAMPM(p.end)}</span></th>
                   ))}
                 </tr>
               </thead>

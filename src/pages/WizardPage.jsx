@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { useNavigate } from 'react-router-dom';
 import { generateTimetable, getDefaultRequirements, analyzeStaffing } from '../utils/generator';
+import { formatAMPM } from '../utils/formatTime';
 import {
   Wand2, ChevronRight, ChevronLeft, Check, AlertTriangle,
   Settings2, ClipboardList, Eye, Sparkles, RefreshCcw,
@@ -579,7 +580,7 @@ export default function WizardPage() {
                       <tr>
                         <th className="day-col">Day</th>
                         {previewPeriods.map(p => (
-                          <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{p.start}</span></th>
+                          <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{formatAMPM(p.start)}</span></th>
                         ))}
                       </tr>
                     </thead>

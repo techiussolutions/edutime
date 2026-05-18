@@ -3,6 +3,7 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
+import { formatAMPM } from '../utils/formatTime';
 import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2 } from 'lucide-react';
 
 
@@ -361,7 +362,7 @@ export default function TimetablePage() {
                 {effectivePeriods.map(p => (
                   <th key={p.period}>
                     {p.label}{p.isBreak ? ' 🫖' : ''}
-                    <br/><span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:'.72rem'}}>{p.start}–{p.end}</span>
+                    <br/><span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:'.72rem'}}>{formatAMPM(p.start)}–{formatAMPM(p.end)}</span>
                   </th>
                 ))}
               </tr>
@@ -680,7 +681,7 @@ export default function TimetablePage() {
                     {periods.map(p => (
                       <th key={p.period}>
                         {p.label}{p.isBreak ? ' 🫖' : ''}
-                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
+                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{formatAMPM(p.start)}–{formatAMPM(p.end)}</span>
                       </th>
                     ))}
                   </tr>
@@ -762,7 +763,7 @@ export default function TimetablePage() {
                     {periods.map(p => (
                       <th key={p.period}>
                         {p.label}{p.isBreak ? ' 🫖' : ''}
-                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
+                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{formatAMPM(p.start)}–{formatAMPM(p.end)}</span>
                       </th>
                     ))}
                   </tr>
