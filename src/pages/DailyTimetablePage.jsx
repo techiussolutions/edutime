@@ -29,14 +29,8 @@ export default function DailyTimetablePage() {
     return schedule.find(s => s.teacherId === teacherId && s.day === dIdx && s.period === period) || null;
   };
 
-  // Resolve effective period timings: class-specific if available, else global
-  const effectivePeriods = (() => {
-    if (viewMode === 'class' && selectedClass) {
-      const custom = classPeriodSettings[selectedClass];
-      if (custom) return custom.periodTimings;
-    }
-    return settings.periodTimings;
-  })();
+  // All classes use the global period schedule; blocked periods are handled by the generator
+  const effectivePeriods = settings.periodTimings;
 
   return (
     <div className="anim-fade-up">

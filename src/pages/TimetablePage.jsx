@@ -53,29 +53,12 @@ export default function TimetablePage() {
     setTimeout(() => window.print(), 100);
   };
 
-  // Resolve effective period timings: class-specific if available, else global
-  // For teacher view, use the longest period list across all classes they teach
-  const getEffectivePeriods = () => {
-    if (viewMode === 'class' && selectedClass) {
-      const custom = classPeriodSettings[selectedClass];
-      if (custom) return custom.periodTimings;
-    }
-    if (viewMode === 'teacher' && selectedTeacher) {
-      const teacherClassIds = [...new Set(
-        schedule.filter(s => s.teacherId === selectedTeacher).map(s => s.classId)
-      )];
-      let longest = settings.periodTimings;
-      for (const cid of teacherClassIds) {
-        const custom = classPeriodSettings[cid];
-        if (custom && custom.periodTimings.length > longest.length) {
-          longest = custom.periodTimings;
-        }
-      }
-      return longest;
-    }
-    return settings.periodTimings;
-  };
+  // All classes share the global period schedule; blocked periods are per-class config
+  const getEffectivePeriods = () => settings.periodTimings;
   const effectivePeriods = getEffectivePeriods();
+
+  const isBlockedPeriod = (classId, period) =>
+    (classPeriodSettings[classId]?.blockedPeriods || []).includes(period);
 
   const slotId  = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
   const isLocked= (classId, dayKey, period) => lockedSlots.includes(slotId(classId, dayKey, period));
@@ -130,7 +113,11 @@ export default function TimetablePage() {
       const weekCount = schedule.filter(s => s.classId===classId && s.subjectId===a.subjectId).length;
 
       // Configured periods/week limit for this subject in this class
-      const configuredLimit = periodsConfig[classId]?.find(r => r.subjectId === a.subjectId)?.periodsPerWeek ?? null;
+      // Sum across all entries (multi-teacher subjects have one entry per teacher)
+      const subjectEntries = periodsConfig[classId]?.filter(r => r.subjectId === a.subjectId) ?? [];
+      const configuredLimit = subjectEntries.length > 0
+        ? subjectEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
+        : null;
       // If assigning to this slot, would the total exceed the limit?
       // If this slot already holds this subject, re-assigning keeps count the same.
       const alreadyHere = currentSlot?.subjectId === a.subjectId;
@@ -262,18 +249,19 @@ export default function TimetablePage() {
                     const subject = slot ? subjects.find(s=>s.id===slot.subjectId) : null;
                     const cls = slot && viewMode==='teacher' ? classes.find(c=>c.id===slot.classId) : null;
                     const locked = viewMode==='class' && isLocked(selectedClass, dayKey, p.period);
+                    const blocked = viewMode==='class' && isBlockedPeriod(selectedClass, p.period);
 
                     return (
                       <td
                         key={p.period}
                         className={`tt-cell${slot ? ' assigned' : ''}`}
                         style={{
-                          cursor: canEdit && viewMode==='class' && !locked ? 'pointer' : 'default',
-                          background: locked ? '#fffbeb' : undefined,
+                          cursor: canEdit && viewMode==='class' && !locked && !blocked ? 'pointer' : 'default',
+                          background: locked ? '#fffbeb' : blocked ? 'repeating-linear-gradient(45deg,var(--bg-muted),var(--bg-muted) 4px,var(--bg-card) 4px,var(--bg-card) 10px)' : undefined,
                           position: 'relative',
                         }}
-                        onClick={() => canEdit && viewMode==='class' && openEdit(selectedClass, dayKey, p.period)}
-                        title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
+                        onClick={() => canEdit && viewMode==='class' && !blocked && openEdit(selectedClass, dayKey, p.period)}
+                        title={blocked ? 'Period not available for this class' : locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
                       >
                         {/* Lock icon — always visible (dimmed when unlocked, bright when locked) */}
                         {viewMode === 'class' && (
@@ -294,7 +282,9 @@ export default function TimetablePage() {
                           </button>
                         )}
                         <div className="tt-slot">
-                          {slot ? (
+                          {blocked ? (
+                            <span style={{ fontSize:'.7rem', color:'var(--tx-muted)', opacity:.6 }}>—</span>
+                          ) : slot ? (
                             <>
                               <span className="sub">{subject?.code}</span>
                               <span className="teacher">{teacher?.name?.split(' ')[0] ?? '—'}</span>

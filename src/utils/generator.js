@@ -170,6 +170,8 @@ export function generateTimetable(state, requirements) {
     for (const demand of pending) {
       if (usedClassesThisSlot.has(demand.classId)) continue;
       if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
+      // Skip this slot if the period is blocked for this class
+      if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
 
       // Pick the best available teacher from the pool
       // "Best" = free this slot + lightest load (load-balance across co-teachers)

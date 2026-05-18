@@ -292,13 +292,13 @@ function reducer(state, action) {
 
     // Per-class period schedule override
     case 'SET_CLASS_PERIOD_SETTINGS': {
-      // action.payload = { classId, periodTimings }  (periodTimings=null means reset to default)
-      const { classId: cid, periodTimings } = action.payload;
+      // action.payload = { classId, blockedPeriods }  (empty array means no restrictions)
+      const { classId: cid, blockedPeriods } = action.payload;
       const updated = { ...(state.classPeriodSettings || {}) };
-      if (!periodTimings) {
+      if (!blockedPeriods || blockedPeriods.length === 0) {
         delete updated[cid];
       } else {
-        updated[cid] = { periodTimings };
+        updated[cid] = { blockedPeriods };
       }
       next = { ...state, classPeriodSettings: updated };
       break;

@@ -38,10 +38,10 @@ export default function WizardPage() {
 
 
 
-  // Per-class helper: resolve the effective period timings for a class
+  // Per-class helper: returns periods available to this class (global minus blocked)
   const getClassPeriods = (classId) => {
-    const custom = classPeriodSettings[classId];
-    return custom ? custom.periodTimings : settings.periodTimings;
+    const blocked = classPeriodSettings[classId]?.blockedPeriods || [];
+    return settings.periodTimings.filter(p => !blocked.includes(p.period));
   };
   const getClassNonBreakCount = (classId) => getClassPeriods(classId).filter(p => !p.isBreak).length;
 
@@ -292,7 +292,9 @@ export default function WizardPage() {
                   <div style={{ fontSize: '.8rem', color: 'var(--tx-muted)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <span><strong>{classAvailSlots}</strong> total slots/week ({activeDayCount} days × {classNonBreakPeriods.length} periods)</span>
                     {classPeriodSettings[selectedClass] && (
-                      <span style={{ fontSize: '.72rem', background: 'var(--clr-primary-l)', color: 'var(--clr-primary)', padding: '.15rem .45rem', borderRadius: 'var(--r-md)', border: '1px solid var(--clr-primary)' }}>Custom schedule</span>
+                      <span style={{ fontSize: '.72rem', background: '#fef3c7', color: '#92400e', padding: '.15rem .45rem', borderRadius: 'var(--r-md)', border: '1px solid #fcd34d' }}>
+                        {classPeriodSettings[selectedClass].blockedPeriods?.length ?? 0} period(s) blocked
+                      </span>
                     )}
                   </div>
                 </div>

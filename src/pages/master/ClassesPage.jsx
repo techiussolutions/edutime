@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2, AlertCircle } from 'lucide-react';
 import { formatAMPM } from '../../utils/formatTime';
-import TimePicker from '../../components/TimePicker';
 import { canAssignTeacherToSubject, getTeacherWorkload } from '../../utils/timetableValidation';
 
 
@@ -11,11 +10,6 @@ const GRADES   = ['1','2','3','4','5','6','7','8','9','10','11','12'];
 const SECTIONS = ['A','B','C','D','E'];
 
 const EMPTY_FORM = { grade: '10', section: 'A', classTeacherId: '' };
-
-// Build a default period list from global settings for a new custom override
-function defaultCustomPeriods(globalTimings) {
-  return globalTimings.map(p => ({ ...p }));
-}
 
 export default function ClassesPage() {
   const { state, dispatch } = useApp();
@@ -27,9 +21,9 @@ export default function ClassesPage() {
   const [subjectTeachers,setSubjectTeachers]= useState({});
   const [orGroups,       setOrGroups]       = useState([]); // [{label, subjectIds[]}]
   const [newOrLabel,     setNewOrLabel]     = useState('');
-  // Period schedule state
+  // Period restriction state
   const [useCustom,      setUseCustom]      = useState(false);
-  const [customPeriods,  setCustomPeriods]  = useState([]);
+  const [blockedPeriods, setBlockedPeriods] = useState([]);
   const [confirmDel,     setConfirmDel]     = useState(null);
   const [matrixModal,    setMatrixModal]    = useState(null); // { grade, classes }
   const [assignmentWarnings, setAssignmentWarnings] = useState({}); // { `${subId}_${tid}`: { message, level } }
@@ -46,7 +40,7 @@ export default function ClassesPage() {
     setOrGroups([]);
     setNewOrLabel('');
     setUseCustom(false);
-    setCustomPeriods(defaultCustomPeriods(settings.periodTimings));
+    setBlockedPeriods([]);
     setAssignmentWarnings({});
     setStep(1); setModal('add');
   };
@@ -63,28 +57,19 @@ export default function ClassesPage() {
     setOrGroups((state.classOrGroups?.[cls.id] || []).map(g => ({ ...g, subjectIds: [...g.subjectIds] })));
     setNewOrLabel('');
     const saved = classPeriodSettings[cls.id];
-    setUseCustom(!!saved);
-    setCustomPeriods(saved ? [...saved.periodTimings.map(p => ({...p}))] : defaultCustomPeriods(settings.periodTimings));
+    const bp = saved?.blockedPeriods || [];
+    setUseCustom(bp.length > 0);
+    setBlockedPeriods(bp);
     setAssignmentWarnings({});
     setStep(1); setModal(cls);
   };
 
 
 
-  // ── Period editor helpers ─────────────────────────────────────────────────
-  const updatePeriodRow = (idx, key, val) => {
-    setCustomPeriods(prev => prev.map((p, i) => i === idx ? { ...p, [key]: val } : p));
-  };
-  const addPeriodRow = () => {
-    const last = customPeriods[customPeriods.length - 1];
-    const newPeriod = customPeriods.length + 1;
-    setCustomPeriods(prev => [...prev, {
-      period: newPeriod, label: `Period ${newPeriod}`,
-      start: last?.end ?? '14:00', end: '14:45', isBreak: false,
-    }]);
-  };
-  const removePeriodRow = (idx) => {
-    setCustomPeriods(prev => prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, period: i + 1 })));
+  const toggleBlocked = (period) => {
+    setBlockedPeriods(prev =>
+      prev.includes(period) ? prev.filter(n => n !== period) : [...prev, period]
+    );
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -109,7 +94,7 @@ export default function ClassesPage() {
       },
     });
 
-    dispatch({ type: 'SET_CLASS_PERIOD_SETTINGS', payload: { classId, periodTimings: useCustom ? customPeriods : null } });
+    dispatch({ type: 'SET_CLASS_PERIOD_SETTINGS', payload: { classId, blockedPeriods: useCustom ? blockedPeriods : [] } });
     // Save OR groups (filter out empty ones)
     const validGroups = orGroups.filter(g => g.label.trim() && g.subjectIds.length >= 2);
     dispatch({ type: 'SET_CLASS_OR_GROUPS', payload: { classId, groups: validGroups } });
@@ -159,9 +144,8 @@ export default function ClassesPage() {
               );
               const totalSubjs    = subjects.filter(s => (s.applicableClasses || []).includes(cls.id)).length;
               const periodSetting = classPeriodSettings[cls.id];
-              const nonBreakCount = periodSetting
-                ? periodSetting.periodTimings.filter(p => !p.isBreak).length
-                : settings.periodTimings.filter(p => !p.isBreak).length;
+              const blockedCount = periodSetting?.blockedPeriods?.length ?? 0;
+              const nonBreakCount = settings.periodTimings.filter(p => !p.isBreak).length;
 
               return (
                 <div key={cls.id} className="card" style={{ padding: '1rem' }}>
@@ -180,12 +164,12 @@ export default function ClassesPage() {
 
                   {/* Period schedule badge */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem', fontSize: '.74rem',
-                    color: periodSetting ? 'var(--clr-primary)' : 'var(--tx-muted)',
-                    background: periodSetting ? 'var(--clr-primary-l)' : 'var(--bg-muted)',
-                    border: `1px solid ${periodSetting ? 'var(--clr-primary)' : 'var(--border)'}`,
+                    color: blockedCount > 0 ? '#92400e' : 'var(--tx-muted)',
+                    background: blockedCount > 0 ? '#fef3c7' : 'var(--bg-muted)',
+                    border: `1px solid ${blockedCount > 0 ? '#fcd34d' : 'var(--border)'}`,
                     borderRadius: 'var(--r-md)', padding: '.2rem .5rem', marginBottom: '.4rem', width: 'fit-content' }}>
                     <Clock size={10}/>
-                    {periodSetting ? `Custom: ${nonBreakCount} periods/day` : `Default: ${nonBreakCount} periods/day`}
+                    {blockedCount > 0 ? `${blockedCount} period(s) blocked · ${nonBreakCount - blockedCount} active` : `${nonBreakCount} periods/day`}
                   </div>
 
                   {/* OR groups badge */}
@@ -533,92 +517,68 @@ export default function ClassesPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem',
                     padding: '.875rem 1rem', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', background: 'var(--bg-muted)' }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '.875rem' }}>Use Custom Period Schedule</div>
+                      <div style={{ fontWeight: 600, fontSize: '.875rem' }}>Block Specific Periods</div>
                       <div style={{ fontSize: '.78rem', color: 'var(--tx-muted)', marginTop: '.15rem' }}>
                         {useCustom
-                          ? `This class has its own ${customPeriods.length} periods/day (${customPeriods.filter(p=>!p.isBreak).length} teaching + ${customPeriods.filter(p=>p.isBreak).length} breaks).`
-                          : `Inheriting school default (${settings.periodTimings.length} periods/day).`}
+                          ? blockedPeriods.length > 0
+                            ? `${blockedPeriods.length} period(s) blocked — this class starts later or has a shorter day.`
+                            : 'No periods blocked yet — toggle individual periods below to block them.'
+                          : 'This class uses the full school schedule (all periods available).'}
                       </div>
                     </div>
                     <button
-                      onClick={() => {
-                        if (!useCustom) setCustomPeriods(defaultCustomPeriods(settings.periodTimings));
-                        setUseCustom(p => !p);
-                      }}
+                      onClick={() => { setUseCustom(p => !p); if (useCustom) setBlockedPeriods([]); }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: useCustom ? 'var(--clr-primary)' : 'var(--tx-muted)' }}>
                       {useCustom ? <ToggleRight size={36}/> : <ToggleLeft size={36}/>}
                     </button>
                   </div>
 
-                  {/* School default preview (if not custom) */}
-                  {!useCustom && (
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>#</th><th>Label</th><th>Start</th><th>End</th><th>Type</th></tr></thead>
-                        <tbody>
-                          {settings.periodTimings.map(p => (
-                            <tr key={p.period} style={{ opacity: 0.65 }}>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Label</th><th>Time</th><th>Type</th>
+                          {useCustom && <th style={{ textAlign: 'center', width: 110 }}>Available?</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {settings.periodTimings.map(p => {
+                          const isBlocked = useCustom && blockedPeriods.includes(p.period);
+                          return (
+                            <tr key={p.period} style={{
+                              opacity: isBlocked ? 0.45 : 1,
+                              background: isBlocked ? '#fef2f2' : undefined,
+                            }}>
                               <td>{p.period}</td>
-                              <td>{p.label}</td>
-                              <td>{formatAMPM(p.start)}</td>
-                              <td>{formatAMPM(p.end)}</td>
+                              <td style={{ textDecoration: isBlocked ? 'line-through' : undefined }}>{p.label}</td>
+                              <td style={{ whiteSpace: 'nowrap' }}>{formatAMPM(p.start)} – {formatAMPM(p.end)}</td>
                               <td>{p.isBreak ? '☕ Break' : '📚 Teaching'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <p style={{ fontSize: '.75rem', color: 'var(--tx-muted)', marginTop: '.5rem' }}>
-                        This is read-only — edit in Administration → Settings. Toggle "Custom" above to override for this class.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Custom period editor */}
-                  {useCustom && (
-                    <div>
-                      <div className="table-wrap">
-                        <table>
-                          <thead>
-                            <tr><th style={{width:36}}>#</th><th>Label</th><th>Start</th><th>End</th><th>Type</th><th style={{width:32}}></th></tr>
-                          </thead>
-                          <tbody>
-                            {customPeriods.map((p, idx) => (
-                              <tr key={idx}>
-                                <td style={{ textAlign: 'center', color: 'var(--tx-muted)', fontSize: '.8rem' }}>{idx + 1}</td>
-                                <td>
-                                  <input className="input" value={p.label} style={{ width: '100%' }}
-                                    onChange={e => updatePeriodRow(idx, 'label', e.target.value)}/>
-                                </td>
-                                <td>
-                                  <TimePicker value={p.start} onChange={v => updatePeriodRow(idx, 'start', v)} />
-                                </td>
-                                <td>
-                                  <TimePicker value={p.end} onChange={v => updatePeriodRow(idx, 'end', v)} />
-                                </td>
-                                <td>
-                                  <select className="input" value={p.isBreak ? 'break' : 'teach'} style={{ width: 120 }}
-                                    onChange={e => updatePeriodRow(idx, 'isBreak', e.target.value === 'break')}>
-                                    <option value="teach">📚 Teaching</option>
-                                    <option value="break">☕ Break</option>
-                                  </select>
-                                </td>
-                                <td>
-                                  {customPeriods.length > 1 && (
-                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => removePeriodRow(idx)}>
-                                      <Trash2 size={12} color="var(--clr-red)"/>
+                              {useCustom && (
+                                <td style={{ textAlign: 'center' }}>
+                                  {p.isBreak ? (
+                                    <span style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>—</span>
+                                  ) : (
+                                    <button
+                                      onClick={() => toggleBlocked(p.period)}
+                                      title={isBlocked ? 'Click to make available' : 'Click to block'}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                        color: isBlocked ? 'var(--clr-red)' : 'var(--clr-green)' }}>
+                                      {isBlocked ? <ToggleLeft size={28}/> : <ToggleRight size={28}/>}
                                     </button>
                                   )}
                                 </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <button className="btn btn-ghost btn-sm" style={{ marginTop: '.75rem' }} onClick={addPeriodRow}>
-                        <Plus size={13}/> Add Period
-                      </button>
-                    </div>
-                  )}
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p style={{ fontSize: '.75rem', color: 'var(--tx-muted)', marginTop: '.5rem' }}>
+                    {useCustom
+                      ? 'Blocked periods are skipped during timetable generation and shown as unavailable in the grid.'
+                      : 'Enable above to block specific periods (e.g. for classes that start later or end earlier).'}
+                  </p>
                 </div>
               )}
             </div>
