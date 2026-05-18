@@ -160,7 +160,29 @@ export function generateTimetable(state, requirements) {
     });
   }
 
+  // ── Pre-fill locked slots: carry them into the new schedule unchanged ─────
+  // For every locked slot belonging to a target class, add it to the output,
+  // mark teacher + class busy, and decrement the corresponding demand so
+  // the generator doesn't try to place that period again.
+  const lockedSlotIds = new Set(state.lockedSlots || []);
   const schedule = [];
+  if (lockedSlotIds.size > 0) {
+    (state.schedule || []).forEach(slot => {
+      if (!lockedSlotIds.has(slot.id)) return;
+      if (!targetClasses.some(c => c.id === slot.classId)) return;
+      schedule.push({ ...slot }); // carry forward as-is
+      teacherBusy.add(`${slot.teacherId}_${slot.day}_${slot.period}`);
+      classBusy.add(`${slot.classId}_${slot.day}_${slot.period}`);
+      teacherLoad[slot.teacherId] = (teacherLoad[slot.teacherId] || 0) + 1;
+      // Reduce the matching demand so we don't over-assign this subject
+      const demand = demands.find(d => d.classId === slot.classId && d.subjectId === slot.subjectId);
+      if (demand) {
+        demand.remaining = Math.max(0, demand.remaining - 1);
+        demand.dayCount[slot.day] = (demand.dayCount[slot.day] || 0) + 1;
+      }
+    });
+  }
+
   const warnings = [];
 
   // ── Step 3: Slot fill ─────────────────────────────────────────────────────
