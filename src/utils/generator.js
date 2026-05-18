@@ -87,7 +87,11 @@ export function generateTimetable(state, requirements) {
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
-      const teacherIds = assignmentMap[`${cls.id}__${req.subjectId}`];
+      // If the entry has a specific teacherId (per-teacher split), use only that teacher.
+      // Otherwise fall back to the full pool from classAssignments.
+      const teacherIds = req.teacherId
+        ? [req.teacherId]
+        : assignmentMap[`${cls.id}__${req.subjectId}`];
       if (!teacherIds?.length) return;
       const orGroup = subjectOrGroupLabel[`${cls.id}__${req.subjectId}`] || '';
       if (orGroup) {
@@ -106,7 +110,10 @@ export function generateTimetable(state, requirements) {
   const unassigned = [];
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
-      if (!assignmentMap[`${cls.id}__${req.subjectId}`]?.length) {
+      const hasTeacher = req.teacherId
+        ? teachers.some(t => t.id === req.teacherId)
+        : assignmentMap[`${cls.id}__${req.subjectId}`]?.length > 0;
+      if (!hasTeacher) {
         const sub = subjects.find(s => s.id === req.subjectId);
         unassigned.push(`${cls.name}: no teacher assigned for ${sub?.name ?? req.subjectId}. Go to Master Data → Classes to assign.`);
       }
@@ -264,21 +271,35 @@ export function generateTimetable(state, requirements) {
 
 /**
  * Returns default subject requirements per class, using classAssignments.
- * Only subjects with an assigned teacher are included by default.
+ * For subjects with multiple teachers, one entry per teacher is created so
+ * each teacher's period allocation can be configured independently.
  */
 export function getDefaultRequirements(classes, subjects, activeDayCount, classAssignments = []) {
   const classSubjectMap = {};
   classes.forEach(cls => {
-    const assignedSubjectIds = classAssignments
-      .filter(a => a.classId === cls.id).map(a => a.subjectId);
-    const applicable = subjects.filter(s => assignedSubjectIds.includes(s.id));
-    classSubjectMap[cls.id] = applicable.map(sub => ({
-      subjectId: sub.id,
-      periodsPerWeek:
+    const entries = [];
+    const assignments = classAssignments.filter(a => a.classId === cls.id);
+    assignments.forEach(a => {
+      const sub = subjects.find(s => s.id === a.subjectId);
+      if (!sub) return;
+      const defaultPeriods =
         sub.code === 'MATH' || sub.code === 'ENG' ? 5
         : sub.code === 'PE' || sub.code === 'ART' || sub.code === 'MUS' ? 2
-        : 4  // SCI, SST, HIN, CS, etc.
-    }));
+        : 4;
+      const teacherIds = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+      if (teacherIds.length > 1) {
+        // Split evenly across teachers, remainder goes to the first
+        const perTeacher = Math.floor(defaultPeriods / teacherIds.length);
+        const remainder  = defaultPeriods % teacherIds.length;
+        teacherIds.forEach((tid, i) => {
+          entries.push({ subjectId: sub.id, teacherId: tid, periodsPerWeek: perTeacher + (i === 0 ? remainder : 0) });
+        });
+      } else {
+        // Single teacher — no teacherId key needed (backward-compatible)
+        entries.push({ subjectId: sub.id, periodsPerWeek: defaultPeriods });
+      }
+    });
+    classSubjectMap[cls.id] = entries;
   });
   return classSubjectMap;
 }
@@ -383,13 +404,26 @@ export function mergeNewSubjects(map, clsList, assignments) {
   const merged = {};
   clsList.forEach(cls => {
     const existing = map[cls.id] || [];
-    const existingIds = new Set(existing.map(r => r.subjectId));
-    const assignedSubjectIds = assignments
-      .filter(a => a.classId === cls.id && a.subjectId)
-      .map(a => a.subjectId);
-    const newEntries = assignedSubjectIds
-      .filter(sid => !existingIds.has(sid))
-      .map(sid => ({ subjectId: sid, periodsPerWeek: 0 }));
+    // Build a set of "subjectId__teacherId" keys already present
+    const existingKeys = new Set(existing.map(r => r.teacherId ? `${r.subjectId}__${r.teacherId}` : r.subjectId));
+
+    const clsAssignments = assignments.filter(a => a.classId === cls.id && a.subjectId);
+    const newEntries = [];
+    clsAssignments.forEach(a => {
+      const teacherIds = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+      if (teacherIds.length > 1) {
+        teacherIds.forEach(tid => {
+          const key = `${a.subjectId}__${tid}`;
+          if (!existingKeys.has(key)) {
+            newEntries.push({ subjectId: a.subjectId, teacherId: tid, periodsPerWeek: 0 });
+          }
+        });
+      } else {
+        if (!existingKeys.has(a.subjectId)) {
+          newEntries.push({ subjectId: a.subjectId, periodsPerWeek: 0 });
+        }
+      }
+    });
     merged[cls.id] = newEntries.length > 0 ? [...existing, ...newEntries] : existing;
   });
   return merged;

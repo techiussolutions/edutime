@@ -379,8 +379,6 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .toggle input:checked + .toggle-track { background: var(--clr-primary); border-color: var(--clr-primary); }
 .toggle input:checked + .toggle-track::after { transform: translateX(18px); }
 
-.toggle.toggle-amber input:checked + .toggle-track { background: var(--clr-amber); border-color: var(--clr-amber); }
-
 /* ─── BADGES ─────────────────────────────────────────────────── */
 .badge {
   display: inline-flex; align-items: center; gap: .3rem;
@@ -430,10 +428,14 @@ tbody tr:hover { background: var(--bg-muted); }
   border-radius: var(--r-2xl);
   box-shadow: var(--sh-xl);
   width: 100%; max-width: 560px;
+  /* Grow with content but never taller than the viewport minus overlay padding */
   max-height: calc(100vh - 4rem);
   animation: fadeUp .2s both;
   display: flex;
   flex-direction: column;
+  /* Never produce a horizontal scrollbar */
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 .modal-lg { max-width: 720px; }
 .modal-header {
@@ -444,8 +446,22 @@ tbody tr:hover { background: var(--bg-muted); }
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   flex-shrink: 0;
   gap: 1rem;
+  /* Prevent header content from pushing width */
+  min-width: 0;
+  overflow: hidden;
 }
-.modal-body   { padding: 1.5rem; flex: 1; overflow-y: auto; }
+.modal-body {
+  padding: 1.5rem;
+  /* Scroll vertically when content is too tall, never horizontally */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Let the body shrink to give room to header/footer */
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Prevent inner content from blowing out the width */
+  min-width: 0;
+  box-sizing: border-box;
+}
 .modal-footer {
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border);
@@ -453,6 +469,8 @@ tbody tr:hover { background: var(--bg-muted); }
   background: var(--bg-card);
   border-radius: 0 0 var(--r-2xl) var(--r-2xl);
   flex-shrink: 0;
+  /* Wrap buttons on narrow modals instead of overflowing */
+  flex-wrap: wrap;
 }
 
 /* ─── TABS ───────────────────────────────────────────────────── */
@@ -679,19 +697,26 @@ tbody tr:hover { background: var(--bg-muted); }
     width: 100%;
     margin: 0;
     border-radius: 0;
-    max-height: none;
-    min-height: 100vh;
+    max-height: 100dvh;
+    min-height: 100dvh;
     box-shadow: none;
+    overflow-x: hidden;
   }
   .modal-header {
     border-radius: 0;
+    min-width: 0;
+    overflow: hidden;
   }
   .modal-body {
     overflow-y: auto;
-    flex: 1;
+    overflow-x: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
   }
   .modal-footer {
     border-radius: 0;
+    flex-wrap: wrap;
   }
   
   /* Page headers */

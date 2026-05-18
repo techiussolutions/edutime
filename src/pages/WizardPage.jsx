@@ -103,12 +103,14 @@ export default function WizardPage() {
     };
   };
 
-  const updatePeriods = (classId, subjectId, delta) => {
+  const updatePeriods = (classId, subjectId, delta, teacherId = null) => {
     setClassSubjectMap(prev => {
       const next = {
         ...prev,
         [classId]: prev[classId].map(s =>
-          s.subjectId === subjectId ? { ...s, periodsPerWeek: Math.max(0, Math.min(10, s.periodsPerWeek + delta)) } : s
+          s.subjectId === subjectId && (teacherId ? s.teacherId === teacherId : !s.teacherId)
+            ? { ...s, periodsPerWeek: Math.max(0, Math.min(10, s.periodsPerWeek + delta)) }
+            : s
         )
       };
       // Persist immediately so it survives navigation
@@ -304,48 +306,66 @@ export default function WizardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(classSubjectMap[selectedClass] || []).map(req => {
-                        const sub = subjects.find(s => s.id === req.subjectId);
+                      {(() => {
                         const totalReq = (classSubjectMap[selectedClass] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
                         const over = totalReq > classAvailSlots;
-                        return (
-                          <tr key={req.subjectId}>
-                            <td>
-                              <div style={{ fontWeight: 600 }}>{sub?.name}</div>
-                              <div style={{ fontSize: '.75rem', color: 'var(--tx-muted)' }}>{sub?.code}</div>
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' }}>
-                                <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
-                                  onClick={() => updatePeriods(selectedClass, req.subjectId, -1)}>−</button>
-                                <span style={{ fontWeight: 700, fontSize: '1.05rem', minWidth: 22, textAlign: 'center', color: over && req.periodsPerWeek > 0 ? 'var(--clr-red)' : undefined }}>
-                                  {req.periodsPerWeek}
-                                </span>
-                                <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
-                                  onClick={() => updatePeriods(selectedClass, req.subjectId, 1)}>+</button>
-                              </div>
-                            </td>
-                            <td>
-                              {(() => {
-                                const asgn = classAssignments.find(
-                                  a => a.classId === selectedClass && a.subjectId === req.subjectId
-                                );
-                                // Support teacherIds[] (new) and legacy teacherId
-                                const primaryId = asgn?.teacherIds?.[0] || asgn?.teacherId;
-                                const t = primaryId ? teachers.find(t => t.id === primaryId) : null;
-                                const extraCount = (asgn?.teacherIds?.length || 0) - 1;
-                                return t
-                                  ? <span className="badge badge-green">
-                                      {t.name.split(' ')[0]}
-                                      {extraCount > 0 && <span style={{ marginLeft: 3, opacity: .7 }}>+{extraCount}</span>}
+                        // Group entries by subjectId to detect multi-teacher subjects
+                        const grouped = {};
+                        (classSubjectMap[selectedClass] || []).forEach(req => {
+                          if (!grouped[req.subjectId]) grouped[req.subjectId] = [];
+                          grouped[req.subjectId].push(req);
+                        });
+                        return Object.values(grouped).map(group => {
+                          const sub = subjects.find(s => s.id === group[0].subjectId);
+                          const isMulti = group.length > 1;
+                          return group.map((req, idx) => {
+                            const teacher = req.teacherId ? teachers.find(t => t.id === req.teacherId) : null;
+                            const asgn = !isMulti
+                              ? classAssignments.find(a => a.classId === selectedClass && a.subjectId === req.subjectId)
+                              : null;
+                            const primaryId = !isMulti && (asgn?.teacherIds?.[0] || asgn?.teacherId);
+                            const singleTeacher = primaryId ? teachers.find(t => t.id === primaryId) : null;
+                            return (
+                              <tr key={`${req.subjectId}_${req.teacherId ?? 'solo'}`}
+                                style={{ borderTop: idx === 0 ? '1px solid var(--border)' : 'none',
+                                  background: isMulti && idx > 0 ? 'var(--bg-muted)' : undefined }}>
+                                {/* Subject cell — only rendered on the first row of the group */}
+                                {idx === 0 ? (
+                                  <td rowSpan={group.length} style={{ verticalAlign: 'top', paddingTop: '.75rem' }}>
+                                    <div style={{ fontWeight: 600 }}>{sub?.name}</div>
+                                    <div style={{ fontSize: '.75rem', color: 'var(--tx-muted)' }}>{sub?.code}</div>
+                                    {isMulti && (
+                                      <div style={{ fontSize: '.7rem', marginTop: '.2rem', color: 'var(--clr-primary)', fontWeight: 600 }}>
+                                        {group.length} teachers · {group.reduce((s, r) => s + r.periodsPerWeek, 0)} total periods
+                                      </div>
+                                    )}
+                                  </td>
+                                ) : null}
+                                <td style={{ textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' }}>
+                                    <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
+                                      onClick={() => updatePeriods(selectedClass, req.subjectId, -1, req.teacherId ?? null)}>−</button>
+                                    <span style={{ fontWeight: 700, fontSize: '1.05rem', minWidth: 22, textAlign: 'center', color: over && req.periodsPerWeek > 0 ? 'var(--clr-red)' : undefined }}>
+                                      {req.periodsPerWeek}
                                     </span>
-                                  : <span style={{ color: 'var(--clr-red)', fontSize: '.8rem' }}>⚠ Not assigned</span>;
-                              })()}
-
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                    <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
+                                      onClick={() => updatePeriods(selectedClass, req.subjectId, 1, req.teacherId ?? null)}>+</button>
+                                  </div>
+                                </td>
+                                <td>
+                                  {isMulti && teacher ? (
+                                    <span className="badge badge-green">{teacher.name.split(' ')[0]}</span>
+                                  ) : singleTeacher ? (
+                                    <span className="badge badge-green">{singleTeacher.name.split(' ')[0]}</span>
+                                  ) : (
+                                    <span style={{ color: 'var(--clr-red)', fontSize: '.8rem' }}>⚠ Not assigned</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
