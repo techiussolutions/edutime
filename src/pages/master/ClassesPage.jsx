@@ -201,10 +201,11 @@ export default function ClassesPage() {
                     <div style={{ marginTop: '.5rem', display: 'flex', gap: '.25rem', flexWrap: 'wrap' }}>
                       {assignments.slice(0, 5).map(a => {
                         const sub = subjects.find(s => s.id === a.subjectId);
-                        const t   = teachers.find(t => t.id === a.teacherId);
+                        const tIds = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+                        const t = teachers.find(t => t.id === tIds[0]);
                         return (
                           <span key={a.id} className="badge badge-gray" style={{ fontSize: '.68rem' }} title={`${sub?.name} → ${t?.name}`}>
-                            {sub?.code}: {t?.name?.split(' ')[0]}
+                            {sub?.code}: {t?.name?.split(' ')[0] ?? '—'}
                           </span>
                         );
                       })}
