@@ -376,6 +376,10 @@ function reducer(state, action) {
     case 'CLEAR_SLOT':
       next = { ...state, schedule: state.schedule.filter(s => s.id !== action.payload) };
       break;
+    case 'CLEAR_ALL_SCHEDULE':
+      // Remove all unlocked slots
+      next = { ...state, schedule: state.schedule.filter(s => state.lockedSlots.includes(s.id)) };
+      break;
     case 'BULK_SET_SCHEDULE':
       // Merge: keep locked slots from existing schedule, replace unlocked ones
       next = {

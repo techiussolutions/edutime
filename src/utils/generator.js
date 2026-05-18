@@ -99,8 +99,10 @@ export function generateTimetable(state, requirements) {
         if (orGroupLeaders.has(key)) return;
         orGroupLeaders.add(key);
       }
-      // If periodsPerWeek == activeDayCount, enforce at most 1 assignment per day
-      const maxPerDay = req.periodsPerWeek === activeDayKeys.length ? 1 : Infinity;
+      // Limit how many times a subject can appear on the same day:
+      //  - periodsPerWeek == activeDayCount  → exactly 1 per day
+      //  - otherwise                         → at most 2 per day
+      const maxPerDay = req.periodsPerWeek === activeDayKeys.length ? 1 : 2;
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
         remaining: req.periodsPerWeek, orGroup, maxPerDay, dayCount: {} });
     });

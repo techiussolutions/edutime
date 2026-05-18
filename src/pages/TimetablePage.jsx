@@ -3,7 +3,7 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
-import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2 } from 'lucide-react';
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
 const DAY_IDX  = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
@@ -24,8 +24,9 @@ export default function TimetablePage() {
   const [selectedTeacher,setSelectedTeacher]= useState(teachers[0]?.id);
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
-  const [showPrintModal, setShowPrintModal] = useState(false);
-  const [printClassIds,  setPrintClassIds]  = useState([]);
+  const [showPrintModal,  setShowPrintModal]  = useState(false);
+  const [printClassIds,   setPrintClassIds]   = useState([]);
+  const [confirmClear,    setConfirmClear]    = useState(null); // classId to clear, or null
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
 
@@ -190,9 +191,17 @@ export default function TimetablePage() {
         </div>
         <div style={{ flex:1 }}/>
         {viewMode==='class'
-          ? <select className="input" style={{width:200}} value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>
-              {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          ? <>
+              <select className="input" style={{width:200}} value={selectedClass} onChange={e=>setSelectedClass(e.target.value)}>
+                {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {canEdit && schedule.some(s => s.classId===selectedClass && !lockedSlots.includes(s.id)) && (
+                <button className="btn btn-outline btn-sm" style={{ color:'var(--clr-red)', borderColor:'var(--clr-red)' }}
+                  onClick={() => setConfirmClear(selectedClass)} title="Clear this class's unlocked slots">
+                  <Trash2 size={13}/> Clear Class
+                </button>
+              )}
+            </>
           : <select className="input" style={{width:200}} value={selectedTeacher} onChange={e=>setSelectedTeacher(e.target.value)}>
               {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
@@ -203,6 +212,33 @@ export default function TimetablePage() {
           <span style={{ display:'flex', alignItems:'center', gap:.25 }}><span style={{ display:'inline-block', width:12, height:12, borderRadius:3, background:'var(--bg-muted)', border:'1px solid var(--border)', marginRight:4 }}/>Break</span>
         </div>
       </div>
+
+      {/* Confirm clear class modal */}
+      {confirmClear && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmClear(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3 style={{ color: 'var(--clr-red)' }}>Clear {classes.find(c=>c.id===confirmClear)?.name}?</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setConfirmClear(null)}><X size={16}/></button>
+            </div>
+            <div className="modal-body">
+              <p>This will remove all <strong>unlocked</strong> slots for <strong>{classes.find(c=>c.id===confirmClear)?.name}</strong>. Locked slots are preserved.</p>
+              {lockedSlots.filter(id => id.startsWith(`sch_${confirmClear}_`)).length > 0 && (
+                <p style={{ fontSize: '.82rem', color: 'var(--tx-muted)' }}>
+                  {lockedSlots.filter(id => id.startsWith(`sch_${confirmClear}_`)).length} locked slot(s) in this class will be kept.
+                </p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setConfirmClear(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => {
+                dispatch({ type: 'CLEAR_CLASS_SCHEDULE', payload: confirmClear });
+                setConfirmClear(null);
+              }}>Clear Unlocked Slots</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print header — only visible when printing */}
       <div className="print-header">
