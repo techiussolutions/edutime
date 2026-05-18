@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { formatAMPM } from '../utils/formatTime';
+import TimePicker from './TimePicker';
 import {
   Settings2, CalendarDays, Clock, Users, ShieldCheck,
   ChevronRight, ChevronLeft, Check, Save, RotateCcw
@@ -435,16 +436,10 @@ export default function SetupWizard({ onComplete }) {
                                 style={{ fontWeight: t.isBreak ? 600 : 400, color: t.isBreak ? 'var(--clr-amber)' : 'var(--tx-main)', width: '100%' }} />
                             </td>
                             <td style={{ padding: '.25rem .35rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
-                                <input type="time" className="input input-sm" value={t.start} onChange={e=>updateTiming(t.period,'start',e.target.value)} />
-                                <span style={{ fontSize: '.7rem', color: 'var(--tx-muted)', width: 55 }}>{formatAMPM(t.start)}</span>
-                              </div>
+                              <TimePicker value={t.start} onChange={v => updateTiming(t.period, 'start', v)} style={{ height: 32 }} />
                             </td>
                             <td style={{ padding: '.25rem .35rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
-                                <input type="time" className="input input-sm" value={t.end} onChange={e=>updateTiming(t.period,'end',e.target.value)} />
-                                <span style={{ fontSize: '.7rem', color: 'var(--tx-muted)', width: 55 }}>{formatAMPM(t.end)}</span>
-                              </div>
+                              <TimePicker value={t.end} onChange={v => updateTiming(t.period, 'end', v)} style={{ height: 32 }} />
                             </td>
                             <td style={{ padding: '.35rem .5rem', textAlign: 'center' }}>
                               <span className={`badge ${t.isBreak ? 'badge-amber' : 'badge-indigo'}`}>{dur} min</span>

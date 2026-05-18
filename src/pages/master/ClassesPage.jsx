@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2 } from 'lucide-react';
 import { formatAMPM } from '../../utils/formatTime';
+import TimePicker from '../../components/TimePicker';
 
 
 const GRADES   = ['1','2','3','4','5','6','7','8','9','10','11','12'];
@@ -521,12 +522,10 @@ export default function ClassesPage() {
                                     onChange={e => updatePeriodRow(idx, 'label', e.target.value)}/>
                                 </td>
                                 <td>
-                                  <input className="input" type="time" value={p.start} style={{ width: 105 }}
-                                    onChange={e => updatePeriodRow(idx, 'start', e.target.value)}/>
+                                  <TimePicker value={p.start} onChange={v => updatePeriodRow(idx, 'start', v)} />
                                 </td>
                                 <td>
-                                  <input className="input" type="time" value={p.end} style={{ width: 105 }}
-                                    onChange={e => updatePeriodRow(idx, 'end', e.target.value)}/>
+                                  <TimePicker value={p.end} onChange={v => updatePeriodRow(idx, 'end', v)} />
                                 </td>
                                 <td>
                                   <select className="input" value={p.isBreak ? 'break' : 'teach'} style={{ width: 120 }}
