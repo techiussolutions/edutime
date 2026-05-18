@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
-import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2, AlertCircle } from 'lucide-react';
 import { formatAMPM } from '../../utils/formatTime';
 import TimePicker from '../../components/TimePicker';
+import { canAssignTeacherToSubject, getTeacherWorkload } from '../../utils/timetableValidation';
 
 
 const GRADES   = ['1','2','3','4','5','6','7','8','9','10','11','12'];
@@ -31,6 +32,7 @@ export default function ClassesPage() {
   const [customPeriods,  setCustomPeriods]  = useState([]);
   const [confirmDel,     setConfirmDel]     = useState(null);
   const [matrixModal,    setMatrixModal]    = useState(null); // { grade, classes }
+  const [assignmentWarnings, setAssignmentWarnings] = useState({}); // { `${subId}_${tid}`: { message, level } }
 
 
   const applicableSubjects = useMemo(() =>
@@ -45,6 +47,7 @@ export default function ClassesPage() {
     setNewOrLabel('');
     setUseCustom(false);
     setCustomPeriods(defaultCustomPeriods(settings.periodTimings));
+    setAssignmentWarnings({});
     setStep(1); setModal('add');
   };
 
@@ -62,6 +65,7 @@ export default function ClassesPage() {
     const saved = classPeriodSettings[cls.id];
     setUseCustom(!!saved);
     setCustomPeriods(saved ? [...saved.periodTimings.map(p => ({...p}))] : defaultCustomPeriods(settings.periodTimings));
+    setAssignmentWarnings({});
     setStep(1); setModal(cls);
   };
 
@@ -292,6 +296,40 @@ export default function ClassesPage() {
                 // Helper: add/remove a teacher for a subject
                 const addTeacher = (subId, tid) => {
                   if (!tid) return;
+                  
+                  // ── Validate before adding ──────────────────────────────────────
+                  const result = canAssignTeacherToSubject(state, tid, form.id, subId);
+                  const warningKey = `${subId}_${tid}`;
+                  
+                  if (!result.canAssign) {
+                    // Cannot assign - show error
+                    setAssignmentWarnings(prev => ({
+                      ...prev,
+                      [warningKey]: { message: result.message, level: 'error' }
+                    }));
+                    return;
+                  }
+                  
+                  // Check workload for warnings
+                  const workload = getTeacherWorkload(state, tid);
+                  if (workload && workload.utilisationPercent > 80) {
+                    setAssignmentWarnings(prev => ({
+                      ...prev,
+                      [warningKey]: {
+                        message: `Teacher utilisation at ${workload.utilisationPercent}%. Remaining: ${workload.remainingCapacity} periods.`,
+                        level: 'warn'
+                      }
+                    }));
+                  } else {
+                    // Clear any previous warning
+                    setAssignmentWarnings(prev => {
+                      const next = { ...prev };
+                      delete next[warningKey];
+                      return next;
+                    });
+                  }
+                  
+                  // Add the teacher
                   setSubjectTeachers(prev => {
                     const cur = prev[subId] || [];
                     return cur.includes(tid) ? prev : { ...prev, [subId]: [...cur, tid] };
@@ -299,6 +337,12 @@ export default function ClassesPage() {
                 };
                 const removeTeacher = (subId, tid) => {
                   setSubjectTeachers(prev => ({ ...prev, [subId]: (prev[subId] || []).filter(id => id !== tid) }));
+                  // Clear warning when removing
+                  setAssignmentWarnings(prev => {
+                    const next = { ...prev };
+                    delete next[`${subId}_${tid}`];
+                    return next;
+                  });
                 };
                 const assignedCount = applicableSubjects.filter(s => (subjectTeachers[s.id] || []).length > 0).length;
                 return (
@@ -336,17 +380,29 @@ export default function ClassesPage() {
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginBottom: assigned.length ? '.4rem' : 0 }}>
                                     {assigned.map(tid => {
                                       const t = teachers.find(x => x.id === tid);
+                                      const warningKey = `${sub.id}_${tid}`;
+                                      const warning = assignmentWarnings[warningKey];
                                       return (
-                                        <span key={tid} style={{
-                                          display: 'inline-flex', alignItems: 'center', gap: '.25rem',
-                                          background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd',
-                                          borderRadius: 20, padding: '.15rem .55rem', fontSize: '.76rem', fontWeight: 600,
-                                        }}>
-                                          {t?.name?.split(' ')[0] ?? tid}
-                                          <button style={{ background: 'none', border: 'none', cursor: 'pointer',
-                                            color: '#7c3aed', padding: 0, lineHeight: 1, fontSize: '.85rem' }}
-                                            onClick={() => removeTeacher(sub.id, tid)} title="Remove">×</button>
-                                        </span>
+                                        <div key={tid} style={{ display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
+                                          <span style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '.25rem',
+                                            background: warning?.level === 'error' ? '#fee2e2' : warning?.level === 'warn' ? '#fef3c7' : '#ede9fe',
+                                            color: warning?.level === 'error' ? '#991b1b' : warning?.level === 'warn' ? '#92400e' : '#5b21b6',
+                                            border: `1px solid ${warning?.level === 'error' ? '#fca5a5' : warning?.level === 'warn' ? '#fcd34d' : '#c4b5fd'}`,
+                                            borderRadius: 20, padding: '.15rem .55rem', fontSize: '.76rem', fontWeight: 600,
+                                          }}>
+                                            {warning?.level === 'error' && <AlertCircle size={12} />}
+                                            {t?.name?.split(' ')[0] ?? tid}
+                                            <button style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                              color: warning?.level === 'error' ? '#991b1b' : warning?.level === 'warn' ? '#92400e' : '#7c3aed', padding: 0, lineHeight: 1, fontSize: '.85rem' }}
+                                              onClick={() => removeTeacher(sub.id, tid)} title="Remove">×</button>
+                                          </span>
+                                          {warning && (
+                                            <div style={{ fontSize: '.68rem', color: warning.level === 'error' ? '#991b1b' : '#92400e', marginLeft: '.3rem' }}>
+                                              ⚠️ {warning.message}
+                                            </div>
+                                          )}
+                                        </div>
                                       );
                                     })}
                                   </div>
@@ -356,9 +412,15 @@ export default function ClassesPage() {
                                       value=""
                                       onChange={e => addTeacher(sub.id, e.target.value)}>
                                       <option value="">{assigned.length ? '+ Add another teacher…' : '— Assign teacher —'}</option>
-                                      {unselected.map(t =>
-                                        <option key={t.id} value={t.id}>{t.name} ({t.department})</option>
-                                      )}
+                                      {unselected.map(t => {
+                                        const workload = getTeacherWorkload(state, t.id);
+                                        const display = workload
+                                          ? `${t.name} (${workload.assignedPeriods}/${workload.maxPeriods} periods)`
+                                          : `${t.name} (${t.department})`;
+                                        return (
+                                          <option key={t.id} value={t.id}>{display}</option>
+                                        );
+                                      })}
                                     </select>
                                   )}
                                   {qualified.length === 0 && (
