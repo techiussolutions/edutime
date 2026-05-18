@@ -656,9 +656,22 @@ export default function TimetablePage() {
           const periods = getPeriodsForClass(cid);
           return (
             <div key={cid} className="print-page">
-              <div className="print-page-header">
-                <h2>{school?.name || 'School Timetable'}</h2>
-                <p>Class: {cls.name}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+              <div className="print-page-header" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>{school?.name || 'School Timetable'}</h2>
+                <div style={{
+                  display: 'inline-block',
+                  fontSize: '1.4rem',
+                  fontWeight: 800,
+                  padding: '0.4rem 1rem',
+                  border: '2px solid #111',
+                  borderRadius: '8px',
+                  backgroundColor: '#f3f4f6',
+                  WebkitPrintColorAdjust: 'exact',
+                  printColorAdjust: 'exact'
+                }}>
+                  Class: {cls.name}
+                </div>
+                {school?.academicYear && <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#555' }}>Academic Year: {school.academicYear}</p>}
               </div>
               <table className="tt-table print-tt">
                 <thead>
@@ -725,9 +738,22 @@ export default function TimetablePage() {
           const periods = getPeriodsForTeacher(tid);
           return (
             <div key={tid} className="print-page">
-              <div className="print-page-header">
-                <h2>{school?.name || 'School Timetable'}</h2>
-                <p>Teacher: {teacher.name} · {teacher.department}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+              <div className="print-page-header" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>{school?.name || 'School Timetable'}</h2>
+                <div style={{
+                  display: 'inline-block',
+                  fontSize: '1.4rem',
+                  fontWeight: 800,
+                  padding: '0.4rem 1rem',
+                  border: '2px solid #111',
+                  borderRadius: '8px',
+                  backgroundColor: '#f3f4f6',
+                  WebkitPrintColorAdjust: 'exact',
+                  printColorAdjust: 'exact'
+                }}>
+                  Teacher: {teacher.name} <span style={{ fontSize: '1rem', fontWeight: 600, color: '#555', marginLeft: '.5rem' }}>({teacher.department})</span>
+                </div>
+                {school?.academicYear && <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#555' }}>Academic Year: {school.academicYear}</p>}
               </div>
               <table className="tt-table print-tt">
                 <thead>
