@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/AppStore';
+import { formatAMPM } from '../utils/formatTime';
 import {
   Settings2, Clock, CalendarDays, Users, ShieldCheck, Plus, Trash2, Save,
   ArrowUpFromLine, ArrowDownFromLine
@@ -177,10 +178,16 @@ export default function SettingsPage() {
                           <input className="input input-sm" value={p.label} onChange={e=>updatePeriod(p.period,'label',e.target.value)} onBlur={toast} style={{ width:140 }}/>
                         </td>
                         <td style={{ padding:'.5rem .75rem' }}>
-                          <input type="time" className="input input-sm" value={p.start} onChange={e=>updatePeriod(p.period,'start',e.target.value)} onBlur={toast} style={{ width:120 }}/>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                            <input type="time" className="input input-sm" value={p.start} onChange={e=>updatePeriod(p.period,'start',e.target.value)} onBlur={toast} style={{ width:120 }}/>
+                            <span style={{ fontSize: '.75rem', color: 'var(--tx-muted)', width: 60 }}>{formatAMPM(p.start)}</span>
+                          </div>
                         </td>
                         <td style={{ padding:'.5rem .75rem' }}>
-                          <input type="time" className="input input-sm" value={p.end} onChange={e=>updatePeriod(p.period,'end',e.target.value)} onBlur={toast} style={{ width:120 }}/>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                            <input type="time" className="input input-sm" value={p.end} onChange={e=>updatePeriod(p.period,'end',e.target.value)} onBlur={toast} style={{ width:120 }}/>
+                            <span style={{ fontSize: '.75rem', color: 'var(--tx-muted)', width: 60 }}>{formatAMPM(p.end)}</span>
+                          </div>
                         </td>
                         <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
                           <label className="toggle">

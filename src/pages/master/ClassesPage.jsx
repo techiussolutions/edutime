@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2 } from 'lucide-react';
+import { formatAMPM } from '../../utils/formatTime';
 
 
 const GRADES   = ['1','2','3','4','5','6','7','8','9','10','11','12'];
@@ -490,8 +491,8 @@ export default function ClassesPage() {
                             <tr key={p.period} style={{ opacity: 0.65 }}>
                               <td>{p.period}</td>
                               <td>{p.label}</td>
-                              <td>{p.start}</td>
-                              <td>{p.end}</td>
+                              <td>{formatAMPM(p.start)}</td>
+                              <td>{formatAMPM(p.end)}</td>
                               <td>{p.isBreak ? '☕ Break' : '📚 Teaching'}</td>
                             </tr>
                           ))}
