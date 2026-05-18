@@ -56,8 +56,7 @@ export default function TimetablePage() {
 
   // ── Print helpers ──────────────────────────────────────────────────────
   const getPeriodsForClass = (classId) => {
-    const blocked = classPeriodSettings[classId]?.blockedPeriods || [];
-    return settings.periodTimings.filter(p => !blocked.includes(p.period));
+    return settings.periodTimings;
   };
   const getCellForPrint = (classId, dayKey, period) => {
     const dIdx = DAY_IDX[dayKey];
@@ -91,10 +90,6 @@ export default function TimetablePage() {
 
   const isBlockedPeriod = (classId, period) =>
     (classPeriodSettings[classId]?.blockedPeriods || []).includes(period);
-
-  const displayPeriods = viewMode === 'class' && selectedClass
-    ? effectivePeriods.filter(p => !isBlockedPeriod(selectedClass, p.period))
-    : effectivePeriods;
 
   const slotId  = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
   const isLocked= (classId, dayKey, period) => lockedSlots.includes(slotId(classId, dayKey, period));
@@ -326,7 +321,7 @@ export default function TimetablePage() {
             <thead>
               <tr>
                 <th className="day-col">DAY</th>
-                {displayPeriods.map(p => (
+                {effectivePeriods.filter(p => p.isBreak || viewMode !== 'class' || !isBlockedPeriod(selectedClass, p.period)).map(p => (
                   <th key={p.period}>
                     {p.label}{p.isBreak ? ' 🫖' : ''}
                     <br/><span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:'.72rem'}}>{p.start}–{p.end}</span>
@@ -338,7 +333,7 @@ export default function TimetablePage() {
               {activeDays.map(dayKey => (
                 <tr key={dayKey}>
                   <th className="day-col" style={{ fontWeight:600, fontSize:'.85rem', textAlign:'center' }}>{dayKey}</th>
-                  {displayPeriods.map(p => {
+                  {effectivePeriods.filter(p => p.isBreak || viewMode !== 'class' || !isBlockedPeriod(selectedClass, p.period)).map(p => {
                     if (p.isBreak) return (
                       <td key={p.period} className="tt-cell break">
                         <div className="tt-slot"><span className="break-label">☕ {p.label}</span></div>
@@ -352,19 +347,18 @@ export default function TimetablePage() {
                     const subject = slot ? subjects.find(s=>s.id===slot.subjectId) : null;
                     const cls = slot && viewMode==='teacher' ? classes.find(c=>c.id===slot.classId) : null;
                     const locked = viewMode==='class' && isLocked(selectedClass, dayKey, p.period);
-                    const blocked = viewMode==='class' && isBlockedPeriod(selectedClass, p.period);
+                    const blocked = false;
 
                     return (
                       <td
                         key={p.period}
                         className={`tt-cell${slot ? ' assigned' : ''}`}
                         style={{
-                          cursor: canEdit && viewMode==='class' && !locked && !blocked ? 'pointer' : 'default',
+                          cursor: canEdit && viewMode==='class' && !locked ? 'pointer' : 'default',
                           background: locked ? '#fffbeb' : undefined,
                           position: 'relative',
-                          visibility: blocked ? 'hidden' : 'visible',
                         }}
-                        onClick={() => canEdit && viewMode==='class' && !blocked && openEdit(selectedClass, dayKey, p.period)}
+                        onClick={() => canEdit && viewMode==='class' && openEdit(selectedClass, dayKey, p.period)}
                         title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
                       >
                         {/* Lock icon — always visible (dimmed when unlocked, bright when locked) */}
@@ -603,7 +597,7 @@ export default function TimetablePage() {
                 <thead>
                   <tr>
                     <th className="day-col">DAY</th>
-                    {periods.map(p => (
+                    {periods.filter(p => p.isBreak || !isBlockedPeriod(cid, p.period)).map(p => (
                       <th key={p.period}>
                         {p.label}{p.isBreak ? ' 🫖' : ''}
                         <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
@@ -615,19 +609,15 @@ export default function TimetablePage() {
                   {activeDays.map(dayKey => (
                     <tr key={dayKey}>
                       <th className="day-col">{dayKey}</th>
-                      {periods.map(p => {
+                      {periods.filter(p => p.isBreak || !isBlockedPeriod(cid, p.period)).map(p => {
                         if (p.isBreak) return <td key={p.period} className="tt-cell break"><div className="tt-slot"><span className="break-label">☕</span></div></td>;
                         const slot = getCellForPrint(cid, dayKey, p.period);
                         const t = slot ? teachers.find(x=>x.id===slot.teacherId) : null;
                         const s = slot ? subjects.find(x=>x.id===slot.subjectId) : null;
-                        const blocked = isBlockedPeriod(cid, p.period);
                         return (
                           <td
                             key={p.period}
                             className={`tt-cell${slot ? ' assigned' : ''}`}
-                            style={{
-                              visibility: blocked ? 'hidden' : 'visible'
-                            }}
                           >
                             <div className="tt-slot">
                               {slot ? (
