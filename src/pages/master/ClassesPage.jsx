@@ -140,8 +140,8 @@ export default function ClassesPage() {
             <GraduationCap size={16} color="var(--clr-primary)"/> {group.label}
             <span className="badge badge-indigo">{group.classes.length}</span>
             {group.classes.length > 0 && (
-              <button className="btn btn-outline btn-sm ml-auto" onClick={() => setMatrixModal({ grade: group.grade, classes: group.classes })} style={{ padding: '.25rem .5rem', fontSize: '.75rem', gap: '.3rem' }}>
-                <BookOpen size={12}/> Compare Divisions
+              <button className="btn btn-outline btn-sm" onClick={() => setMatrixModal({ grade: group.grade, classes: group.classes })} style={{ padding: '.15rem .45rem', fontSize: '.7rem', gap: '.25rem', marginLeft: '.25rem' }}>
+                <BookOpen size={11}/> Compare Divisions
               </button>
             )}
           </h4>
