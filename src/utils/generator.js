@@ -99,12 +99,18 @@ export function generateTimetable(state, requirements) {
         if (orGroupLeaders.has(key)) return;
         orGroupLeaders.add(key);
       }
-      // Limit how many times a subject can appear on the same day:
-      //  - periodsPerWeek == activeDayCount  → exactly 1 per day
-      //  - otherwise                         → at most 2 per day
-      const maxPerDay = req.periodsPerWeek === activeDayKeys.length ? 1 : 2;
+      // Compute a strict per-day budget: evenly distribute periodsPerWeek across
+      // active days. minPerDay goes to every day; the remainder (extras) goes to
+      // randomly chosen days. This guarantees no day is skipped when P >= D.
+      const minPerDay = Math.floor(req.periodsPerWeek / activeDayKeys.length);
+      const extras    = req.periodsPerWeek % activeDayKeys.length;
+      const shuffledDayIdxs = shuffle(activeDayKeys.map(k => DAY_KEY_TO_IDX[k]));
+      const dayBudget = {};
+      shuffledDayIdxs.forEach((dayIdx, i) => {
+        dayBudget[dayIdx] = minPerDay + (i < extras ? 1 : 0);
+      });
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
-        remaining: req.periodsPerWeek, orGroup, maxPerDay, dayCount: {} });
+        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {} });
     });
   });
 
@@ -173,7 +179,7 @@ export function generateTimetable(state, requirements) {
     // Get remaining demands, sorted by most-needed first (greedy), with random tiebreak.
     // Demands that have hit their per-day cap for this day are excluded.
     const pending = demands
-      .filter(d => d.remaining > 0 && (d.dayCount[dayIdx] || 0) < d.maxPerDay)
+      .filter(d => d.remaining > 0 && (d.dayCount[dayIdx] || 0) < (d.dayBudget[dayIdx] ?? 0))
       .sort((a, b) => b.remaining - a.remaining || Math.random() - 0.5);
 
     // For this slot: pick an independent set — no two picks share a teacher or class
