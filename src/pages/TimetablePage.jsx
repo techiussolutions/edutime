@@ -55,8 +55,7 @@ export default function TimetablePage() {
 
   // ── Print helpers ──────────────────────────────────────────────────────
   const getPeriodsForClass = (classId) => {
-    const custom = classPeriodSettings[classId];
-    return custom ? custom.periodTimings : settings.periodTimings;
+    return settings.periodTimings;
   };
   const getCellForPrint = (classId, dayKey, period) => {
     const dIdx = DAY_IDX[dayKey];
