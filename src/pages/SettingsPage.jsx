@@ -185,7 +185,7 @@ export default function SettingsPage() {
                           <TimePicker value={p.end} onChange={v => updatePeriod(p.period, 'end', v)} onBlur={toast} style={{ height: 32 }} />
                         </td>
                         <td style={{ padding:'.5rem .75rem', textAlign:'center' }}>
-                          <label className="toggle">
+                          <label className="toggle toggle-amber">
                             <input type="checkbox" checked={p.isBreak} onChange={()=>toggleBreak(p.period)}/>
                             <span className="toggle-track"/>
                           </label>

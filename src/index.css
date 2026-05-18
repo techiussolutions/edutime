@@ -379,6 +379,8 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .toggle input:checked + .toggle-track { background: var(--clr-primary); border-color: var(--clr-primary); }
 .toggle input:checked + .toggle-track::after { transform: translateX(18px); }
 
+.toggle.toggle-amber input:checked + .toggle-track { background: var(--clr-amber); border-color: var(--clr-amber); }
+
 /* ─── BADGES ─────────────────────────────────────────────────── */
 .badge {
   display: inline-flex; align-items: center; gap: .3rem;
