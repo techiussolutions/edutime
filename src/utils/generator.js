@@ -356,6 +356,9 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   const subjectData = {};
   subjects.forEach(sub => { subjectData[sub.id] = { totalPeriods: 0, teacherPeriods: {}, teacherClasses: {} }; });
 
+  // Cross-subject total load per teacher
+  const teacherTotalPeriods = {};
+
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
@@ -368,9 +371,9 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       if (assignment) {
         const tids = assignment.teacherIds?.length ? assignment.teacherIds : (assignment.teacherId ? [assignment.teacherId] : []);
         tids.forEach(tid => {
-          // Split periods evenly across co-teachers for analysis purposes
           const share = req.periodsPerWeek / tids.length;
           sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + share;
+          teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + share;
           if (!sd.teacherClasses[tid]) sd.teacherClasses[tid] = [];
           if (!sd.teacherClasses[tid].includes(cls.name)) sd.teacherClasses[tid].push(cls.name);
         });
@@ -378,30 +381,31 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
     });
   });
 
-
   const avgMaxPeriods = teachers.length > 0
     ? teachers.reduce((s, t) => s + t.maxPeriods, 0) / teachers.length
     : 30;
 
-  return subjects
+  const subjectResult = subjects
     .filter(sub => subjectData[sub.id]?.totalPeriods > 0)
     .map(sub => {
       const sd = subjectData[sub.id];
       const teacherList = Object.entries(sd.teacherPeriods).map(([tid, periods]) => {
         const t = teachers.find(t => t.id === tid);
-        const overloaded = periods > (t?.maxPeriods ?? 30);
+        const totalLoad = teacherTotalPeriods[tid] || 0;
+        const overloaded = totalLoad > (t?.maxPeriods ?? 30);
         return {
           teacherId: tid,
           teacherName: t?.name ?? tid,
           classCount: sd.teacherClasses[tid]?.length ?? 0,
           classes: sd.teacherClasses[tid] ?? [],
-          periodsAssigned: periods,
+          periodsAssigned: Math.round(periods * 10) / 10,
+          totalLoad,
           maxPeriods: t?.maxPeriods ?? 30,
-          status: overloaded ? 'critical' : periods > (t?.maxPeriods ?? 30) * 0.8 ? 'warn' : 'ok',
+          status: overloaded ? 'critical' : totalLoad > (t?.maxPeriods ?? 30) * 0.8 ? 'warn' : 'ok',
         };
       });
 
-      const recommended = Math.ceil(sd.totalPeriods / (avgMaxPeriods * 0.6)); // 60% utilisation target
+      const recommended = Math.ceil(sd.totalPeriods / (avgMaxPeriods * 0.6));
       const current = teacherList.length;
       const hasCritical = teacherList.some(t => t.status === 'critical');
       const hasWarn = teacherList.some(t => t.status === 'warn');
@@ -422,13 +426,11 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       return (order[a.status] - order[b.status]) || (b.totalPeriodsNeeded - a.totalPeriodsNeeded);
     });
 
-  // Teacher-level summary: aggregate across ALL subjects
   const teacherSummary = teachers
     .filter(t => teacherTotalPeriods[t.id] > 0)
     .map(t => {
       const totalLoad = teacherTotalPeriods[t.id] || 0;
       const overloaded = totalLoad > t.maxPeriods;
-      // Collect which subjects and classes this teacher covers
       const subjectBreakdown = subjectResult
         .filter(s => s.teachers.some(st => st.teacherId === t.id))
         .map(s => {
