@@ -56,7 +56,8 @@ export default function TimetablePage() {
 
   // ── Print helpers ──────────────────────────────────────────────────────
   const getPeriodsForClass = (classId) => {
-    return settings.periodTimings;
+    const blocked = classPeriodSettings[classId]?.blockedPeriods || [];
+    return settings.periodTimings.filter(p => !blocked.includes(p.period));
   };
   const getCellForPrint = (classId, dayKey, period) => {
     const dIdx = DAY_IDX[dayKey];
@@ -90,6 +91,10 @@ export default function TimetablePage() {
 
   const isBlockedPeriod = (classId, period) =>
     (classPeriodSettings[classId]?.blockedPeriods || []).includes(period);
+
+  const displayPeriods = viewMode === 'class' && selectedClass
+    ? effectivePeriods.filter(p => !isBlockedPeriod(selectedClass, p.period))
+    : effectivePeriods;
 
   const slotId  = (classId, dayKey, period) => `sch_${classId}_${DAY_IDX[dayKey]}_${period}`;
   const isLocked= (classId, dayKey, period) => lockedSlots.includes(slotId(classId, dayKey, period));
@@ -321,7 +326,7 @@ export default function TimetablePage() {
             <thead>
               <tr>
                 <th className="day-col">DAY</th>
-                {effectivePeriods.map(p => (
+                {displayPeriods.map(p => (
                   <th key={p.period}>
                     {p.label}{p.isBreak ? ' 🫖' : ''}
                     <br/><span style={{fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:'.72rem'}}>{p.start}–{p.end}</span>
@@ -333,7 +338,7 @@ export default function TimetablePage() {
               {activeDays.map(dayKey => (
                 <tr key={dayKey}>
                   <th className="day-col" style={{ fontWeight:600, fontSize:'.85rem', textAlign:'center' }}>{dayKey}</th>
-                  {effectivePeriods.map(p => {
+                  {displayPeriods.map(p => {
                     if (p.isBreak) return (
                       <td key={p.period} className="tt-cell break">
                         <div className="tt-slot"><span className="break-label">☕ {p.label}</span></div>
