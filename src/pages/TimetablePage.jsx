@@ -24,9 +24,10 @@ export default function TimetablePage() {
   const [selectedTeacher,setSelectedTeacher]= useState('');
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
   const [conflict,       setConflict]       = useState(null);
-  const [showPrintModal,  setShowPrintModal]  = useState(false);
-  const [printClassIds,   setPrintClassIds]   = useState([]);
-  const [confirmClear,    setConfirmClear]    = useState(null); // classId to clear, or null
+  const [showPrintModal,    setShowPrintModal]    = useState(false);
+  const [printClassIds,     setPrintClassIds]     = useState([]);
+  const [printTeacherIds,   setPrintTeacherIds]   = useState([]);
+  const [confirmClear,      setConfirmClear]      = useState(null); // classId to clear, or null
 
   // Sort classes numerically by grade, then section alphabetically
   const sortedClasses = useMemo(() => {
@@ -63,6 +64,7 @@ export default function TimetablePage() {
   };
   const openPrintModal = () => {
     setPrintClassIds(classes.map(c => c.id));
+    setPrintTeacherIds([]);
     setShowPrintModal(true);
   };
   const togglePrintClass = (id) => {
@@ -70,6 +72,12 @@ export default function TimetablePage() {
   };
   const toggleAllPrint = () => {
     setPrintClassIds(prev => prev.length === classes.length ? [] : classes.map(c => c.id));
+  };
+  const togglePrintTeacher = (id) => {
+    setPrintTeacherIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleAllPrintTeachers = () => {
+    setPrintTeacherIds(prev => prev.length === teachers.length ? [] : teachers.map(t => t.id));
   };
   const doPrint = () => {
     setShowPrintModal(false);
@@ -506,41 +514,64 @@ export default function TimetablePage() {
           </div>
         </div>
       )}
-      {/* ── Print Class Selection Modal ── */}
+      {/* ── Print Modal ── */}
       {showPrintModal && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowPrintModal(false)}>
-          <div className="modal" style={{ maxWidth:420 }}>
+          <div className="modal" style={{ maxWidth:480 }}>
             <div className="modal-header">
               <h3>Print Timetables</h3>
               <button className="btn btn-ghost btn-icon" onClick={()=>setShowPrintModal(false)}><X size={16}/></button>
             </div>
-            <div className="modal-body">
-              <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Select classes to include. Each class prints on its own page.</p>
-              <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.5rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6 }}>
-                <input type="checkbox" checked={printClassIds.length === classes.length} onChange={toggleAllPrint}/>
-                Select All ({classes.length})
-              </label>
-              <div style={{ maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.25rem' }}>
-                {classes.map(c => (
-                  <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.35rem .5rem', borderRadius:4, background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
-                    <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
-                    {c.name}
-                  </label>
-                ))}
+            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+
+              {/* Class timetables */}
+              <div>
+                <div style={{ fontWeight:700, fontSize:'.82rem', marginBottom:'.5rem' }}>Class Timetables</div>
+                <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.35rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6, fontSize:'.82rem' }}>
+                  <input type="checkbox" checked={printClassIds.length === classes.length} onChange={toggleAllPrint}/>
+                  Select All ({classes.length})
+                </label>
+                <div style={{ maxHeight:180, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.2rem' }}>
+                  {sortedClasses.map(c => (
+                    <label key={c.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.3rem .5rem', borderRadius:4, fontSize:'.82rem', background: printClassIds.includes(c.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
+                      <input type="checkbox" checked={printClassIds.includes(c.id)} onChange={()=>togglePrintClass(c.id)}/>
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
               </div>
+
+              {/* Teacher timetables */}
+              <div>
+                <div style={{ fontWeight:700, fontSize:'.82rem', marginBottom:'.5rem' }}>Teacher Timetables</div>
+                <label style={{ display:'flex', alignItems:'center', gap:'.5rem', fontWeight:600, marginBottom:'.35rem', cursor:'pointer', padding:'.4rem .5rem', background:'var(--bg-muted)', borderRadius:6, fontSize:'.82rem' }}>
+                  <input type="checkbox" checked={printTeacherIds.length === teachers.length} onChange={toggleAllPrintTeachers}/>
+                  Select All ({teachers.length})
+                </label>
+                <div style={{ maxHeight:180, overflowY:'auto', display:'flex', flexDirection:'column', gap:'.2rem' }}>
+                  {teachers.map(t => (
+                    <label key={t.id} style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', padding:'.3rem .5rem', borderRadius:4, fontSize:'.82rem', background: printTeacherIds.includes(t.id) ? 'var(--clr-primary-l)' : 'transparent' }}>
+                      <input type="checkbox" checked={printTeacherIds.includes(t.id)} onChange={()=>togglePrintTeacher(t.id)}/>
+                      {t.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={()=>setShowPrintModal(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={printClassIds.length===0} onClick={doPrint}>
-                <Printer size={14}/> Print {printClassIds.length} Class{printClassIds.length!==1?'es':''}
+              <button className="btn btn-primary" disabled={printClassIds.length===0 && printTeacherIds.length===0} onClick={doPrint}>
+                <Printer size={14}/> Print {printClassIds.length + printTeacherIds.length} Page{(printClassIds.length + printTeacherIds.length) !== 1 ? 's' : ''}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Hidden print pages — one per selected class ── */}
+      {/* ── Hidden print pages ── class pages then teacher pages ── */}
       <div className="print-pages">
+        {/* Class timetable pages */}
         {printClassIds.map(cid => {
           const cls = classes.find(c => c.id === cid);
           if (!cls) return null;
@@ -577,12 +608,65 @@ export default function TimetablePage() {
                             <div className="tt-slot">
                               {slot ? (
                                 <>
-                                  <span className="sub" style={{ fontWeight: 800, fontSize: '.72rem', display: 'block', textTransform: 'uppercase' }}>
-                                    {s?.code || s?.name}
-                                  </span>
-                                  <span className="teacher" style={{ fontSize: '.6rem', display: 'block', marginTop: '2px', color: '#333' }}>
-                                    {t?.name ?? '—'}
-                                  </span>
+                                  <span className="sub">{s?.code || s?.name}</span>
+                                  <span className="teacher">{t?.name ?? '—'}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
+        {/* Teacher timetable pages */}
+        {printTeacherIds.map(tid => {
+          const teacher = teachers.find(t => t.id === tid);
+          if (!teacher) return null;
+          const periods = settings.periodTimings;
+          return (
+            <div key={tid} className="print-page">
+              <div className="print-page-header">
+                <h2>{school?.name || 'School Timetable'}</h2>
+                <p>Teacher: {teacher.name}{school?.academicYear ? ` · ${school.academicYear}` : ''}</p>
+              </div>
+              <table className="tt-table print-tt">
+                <thead>
+                  <tr>
+                    <th className="day-col">DAY</th>
+                    {periods.map(p => (
+                      <th key={p.period}>
+                        {p.label}{p.isBreak ? ' 🫖' : ''}
+                        <br/><span style={{fontWeight:400,fontSize:'.55rem'}}>{p.start}–{p.end}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeDays.map(dayKey => (
+                    <tr key={dayKey}>
+                      <th className="day-col">{dayKey}</th>
+                      {periods.map(p => {
+                        if (p.isBreak) return (
+                          <td key={p.period} className="tt-cell break">
+                            <div className="tt-slot"><span className="break-label">☕</span></div>
+                          </td>
+                        );
+                        const slot = getTeacherCell(tid, dayKey, p.period);
+                        const s = slot ? subjects.find(x => x.id === slot.subjectId) : null;
+                        const cls = slot ? classes.find(x => x.id === slot.classId) : null;
+                        return (
+                          <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
+                            <div className="tt-slot">
+                              {slot ? (
+                                <>
+                                  <span className="sub">{s?.code || s?.name}</span>
+                                  <span className="cls">{cls?.name ?? '—'}</span>
                                 </>
                               ) : null}
                             </div>
