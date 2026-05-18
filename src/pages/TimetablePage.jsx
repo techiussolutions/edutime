@@ -576,7 +576,16 @@ export default function TimetablePage() {
                         return (
                           <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
                             <div className="tt-slot">
-                              {slot ? (<><span className="sub">{s?.code}</span><span className="teacher">{t?.name?.split(' ')[0] ?? '—'}</span></>) : null}
+                              {slot ? (
+                                <>
+                                  <span className="sub" style={{ fontWeight: 800, fontSize: '.72rem', display: 'block', textTransform: 'uppercase' }}>
+                                    {s?.code || s?.name}
+                                  </span>
+                                  <span className="teacher" style={{ fontSize: '.6rem', display: 'block', marginTop: '2px', color: '#333' }}>
+                                    {t?.name ?? '—'}
+                                  </span>
+                                </>
+                              ) : null}
                             </div>
                           </td>
                         );

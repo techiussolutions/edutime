@@ -847,17 +847,18 @@ tbody tr:hover { background: var(--bg-muted); }
     text-align: center;
     margin-bottom: .5rem;
     padding-bottom: .35rem;
-    border-bottom: 2px solid #333;
+    border-bottom: 2px solid #000;
   }
-  .print-page-header h2 { font-size: 1.1rem; margin: 0 0 .15rem; }
-  .print-page-header p  { font-size: .75rem; margin: 0; color: #555; }
+  .print-page-header h2 { font-size: 1.25rem; margin: 0 0 .15rem; font-weight: 800; color: #000; }
+  .print-page-header p  { font-size: .8rem; margin: 0; color: #000; font-weight: 600; }
 
-  /* Reset layout — full width */
+  /* Reset layout — full width and visible overflow for multi-page print */
   * { box-sizing: border-box; }
-  body, html { margin: 0; padding: 0; width: 100%; overflow: visible !important; }
-  .app-layout { display: block !important; width: 100% !important; }
-  .main-content { margin: 0 !important; padding: .25rem !important; width: 100% !important; max-width: 100% !important; overflow: visible !important; }
-  .anim-fade-up { width: 100% !important; overflow: visible !important; }
+  body, html { margin: 0; padding: 0; width: 100%; height: auto !important; overflow: visible !important; }
+  .app-layout { display: block !important; width: 100% !important; height: auto !important; overflow: visible !important; }
+  .main-area { display: block !important; width: 100% !important; height: auto !important; overflow: visible !important; }
+  .page-content { display: block !important; width: 100% !important; height: auto !important; padding: 0 !important; overflow: visible !important; }
+  .anim-fade-up { width: 100% !important; height: auto !important; overflow: visible !important; }
 
   /* Force tables to fit A4 landscape */
   .print-tt, .tt-table {
@@ -865,43 +866,82 @@ tbody tr:hover { background: var(--bg-muted); }
     width: 100% !important;
     table-layout: fixed !important;
     font-size: .65rem;
-    border-collapse: collapse;
+    border-collapse: collapse !important;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    background: #fff !important;
   }
   .print-tt th, .print-tt td,
   .tt-table th, .tt-table td {
-    padding: .25rem .3rem !important;
-    border: 1px solid #999 !important;
+    padding: .5rem .4rem !important; /* Larger padding for readability */
+    border: 1.5px solid #000000 !important; /* High contrast black borders */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: normal !important;
     word-break: break-word;
     text-align: center;
+    color: #000000 !important;
+    background: #ffffff !important;
   }
   .print-tt th.day-col, .tt-table th.day-col {
-    width: 50px !important;
-    background: #e0e0e0 !important;
-    color: #000 !important;
+    width: 70px !important;
+    background: #f3f4f6 !important;
+    color: #000000 !important;
+    font-weight: 800 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    border: 1.5px solid #000000 !important;
   }
   .print-tt thead th, .tt-table thead th {
-    background: var(--bg-muted, #f3f4f6) !important;
-    font-size: .6rem;
-    line-height: 1.2;
+    background: #f3f4f6 !important;
+    font-size: .7rem !important;
+    font-weight: 800 !important;
+    line-height: 1.3;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    border: 1.5px solid #000000 !important;
   }
-  .print-tt thead th span, .tt-table thead th span { font-size: .55rem !important; }
-  .tt-cell.assigned { background: #f0fdf4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .tt-cell.break { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .tt-slot { padding: .15rem 0 !important; gap: 0 !important; }
-  .tt-slot .sub { font-size: .6rem !important; }
-  .tt-slot .teacher { font-size: .55rem !important; }
-  .tt-slot .cls { font-size: .5rem !important; }
-  .tt-slot .break-label { font-size: .6rem !important; }
+  .print-tt thead th span, .tt-table thead th span { 
+    font-size: .58rem !important; 
+    font-weight: 500 !important; 
+    color: #333333 !important; 
+  }
+  .tt-cell.assigned { 
+    background: #ffffff !important; 
+    border: 1.5px solid #000000 !important; 
+  }
+  .tt-cell.break { 
+    background: #f3f4f6 !important; 
+    -webkit-print-color-adjust: exact; 
+    print-color-adjust: exact; 
+    border: 1.5px solid #000000 !important; 
+  }
+  .tt-slot { 
+    padding: .1rem 0 !important; 
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px !important; 
+  }
+  .tt-slot .sub { 
+    font-size: .75rem !important; /* Highlight subject name prominently */
+    font-weight: 800 !important; 
+    color: #000000 !important; 
+  }
+  .tt-slot .teacher { 
+    font-size: .62rem !important; 
+    font-weight: 500 !important; 
+    color: #333333 !important; 
+  }
+  .tt-slot .break-label { 
+    font-size: .7rem !important; 
+    font-weight: 700 !important; 
+    color: #000000 !important; 
+  }
 
   /* Page setup — A4 landscape, tight margins */
   @page { size: A4 landscape; margin: 8mm; }
 }
+
+
