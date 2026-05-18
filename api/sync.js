@@ -41,11 +41,11 @@ export default async function handler(req, res) {
       case 'UPDATE_CLASS': {
         const c = payload;
         await db`
-          INSERT INTO classes (id, school_id, name, grade, section, grade_group, class_teacher_id)
-          VALUES (${c.id}, ${schoolId}, ${c.name}, ${c.grade}, ${c.section}, ${c.gradeGroup}, ${c.classTeacherId || null})
+          INSERT INTO classes (id, school_id, name, grade, section, class_teacher_id)
+          VALUES (${c.id}, ${schoolId}, ${c.name}, ${c.grade}, ${c.section}, ${c.classTeacherId || null})
           ON CONFLICT (id, school_id) DO UPDATE SET
             name = EXCLUDED.name, grade = EXCLUDED.grade, section = EXCLUDED.section,
-            grade_group = EXCLUDED.grade_group, class_teacher_id = EXCLUDED.class_teacher_id
+            class_teacher_id = EXCLUDED.class_teacher_id
         `;
         break;
       }
@@ -59,10 +59,10 @@ export default async function handler(req, res) {
       case 'UPDATE_SUBJECT': {
         const s = payload;
         await db`
-          INSERT INTO subjects (id, school_id, name, code, grade_groups)
-          VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.gradeGroups || []})
+          INSERT INTO subjects (id, school_id, name, code, applicable_classes)
+          VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses || []})
           ON CONFLICT (id, school_id) DO UPDATE SET
-            name = EXCLUDED.name, code = EXCLUDED.code, grade_groups = EXCLUDED.grade_groups
+            name = EXCLUDED.name, code = EXCLUDED.code, applicable_classes = EXCLUDED.applicable_classes
         `;
         break;
       }
@@ -249,15 +249,15 @@ export default async function handler(req, res) {
         }
         for (const c of (classes || [])) {
           await db`
-            INSERT INTO classes (id, school_id, name, grade, section, grade_group, class_teacher_id)
-            VALUES (${c.id}, ${schoolId}, ${c.name}, ${c.grade}, ${c.section}, ${c.grade_group}, ${c.class_teacher_id || null})
+            INSERT INTO classes (id, school_id, name, grade, section, class_teacher_id)
+            VALUES (${c.id}, ${schoolId}, ${c.name}, ${c.grade}, ${c.section}, ${c.class_teacher_id || null})
             ON CONFLICT (id, school_id) DO NOTHING
           `;
         }
         for (const s of (subjects || [])) {
           await db`
-            INSERT INTO subjects (id, school_id, name, code, grade_groups)
-            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.grade_groups || []})
+            INSERT INTO subjects (id, school_id, name, code, applicable_classes)
+            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicable_classes || []})
             ON CONFLICT (id, school_id) DO NOTHING
           `;
         }

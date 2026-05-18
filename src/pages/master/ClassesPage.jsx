@@ -4,16 +4,10 @@ import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, GraduationCap, ChevronRight, ChevronLeft, Check, BookOpen, Clock, ToggleLeft, ToggleRight, Link2 } from 'lucide-react';
 
 
-const GRADE_GROUPS = [
-  { id: 'primary',   label: 'Primary (1-5)' },
-  { id: 'middle',    label: 'Middle (6-8)' },
-  { id: 'secondary', label: 'Secondary (9-10)' },
-  { id: 'senior',    label: 'Senior (11-12)' },
-];
 const GRADES   = ['1','2','3','4','5','6','7','8','9','10','11','12'];
 const SECTIONS = ['A','B','C','D','E'];
 
-const EMPTY_FORM = { grade: '10', section: 'A', gradeGroup: 'secondary', classTeacherId: '' };
+const EMPTY_FORM = { grade: '10', section: 'A', classTeacherId: '' };
 
 // Build a default period list from global settings for a new custom override
 function defaultCustomPeriods(globalTimings) {
@@ -37,9 +31,8 @@ export default function ClassesPage() {
 
 
   const applicableSubjects = useMemo(() =>
-    subjects.filter(s =>
-      !s.gradeGroups || s.gradeGroups.length === 0 || s.gradeGroups.includes(form.gradeGroup)
-    ), [subjects, form.gradeGroup]);
+    form.id ? subjects.filter(s => (s.applicableClasses || []).includes(form.id)) : [],
+  [subjects, form.id]);
 
   // ── Open modals ───────────────────────────────────────────────────────────
   const openAdd = () => {
@@ -118,18 +111,12 @@ export default function ClassesPage() {
 
 
   // ── Grouped display ───────────────────────────────────────────────────────
-  const grouped = GRADE_GROUPS
-    .map(g => {
-      const gClasses = state.classes.filter(c => c.gradeGroup === g.id);
-      gClasses.sort((a, b) => {
-        const ga = parseInt(a.grade, 10) || 0;
-        const gb = parseInt(b.grade, 10) || 0;
-        if (ga !== gb) return ga - gb;
-        return (a.section || '').localeCompare(b.section || '');
-      });
-      return { ...g, classes: gClasses };
-    })
-    .filter(g => g.classes.length > 0);
+  const uniqueGrades = [...new Set(state.classes.map(c => c.grade))].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
+  const grouped = uniqueGrades.map(grade => {
+    const gClasses = state.classes.filter(c => c.grade === grade);
+    gClasses.sort((a, b) => (a.section || '').localeCompare(b.section || ''));
+    return { id: `grade_${grade}`, label: `Grade ${grade}`, classes: gClasses };
+  });
 
   const stepDefs = [
     { n: 1, label: 'Class Info' },
@@ -158,7 +145,7 @@ export default function ClassesPage() {
               const assignments   = allAssignments.filter(a =>
                 (a.teacherIds?.length > 0) || !!a.teacherId
               );
-              const totalSubjs    = subjects.filter(s => !s.gradeGroups || s.gradeGroups.length === 0 || s.gradeGroups.includes(cls.gradeGroup)).length;
+              const totalSubjs    = subjects.filter(s => (s.applicableClasses || []).includes(cls.id)).length;
               const periodSetting = classPeriodSettings[cls.id];
               const nonBreakCount = periodSetting
                 ? periodSetting.periodTimings.filter(p => !p.isBreak).length
@@ -282,11 +269,6 @@ export default function ClassesPage() {
                       {SECTIONS.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
-                  <div className="field"><label>Grade Group</label>
-                    <select className="input" value={form.gradeGroup} onChange={e => setForm(p => ({ ...p, gradeGroup: e.target.value }))}>
-                      {GRADE_GROUPS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
-                    </select>
-                  </div>
                   <div className="field"><label>Class Teacher</label>
                     <select className="input" value={form.classTeacherId} onChange={e => setForm(p => ({ ...p, classTeacherId: e.target.value }))}>
                       <option value="">— None —</option>
@@ -313,10 +295,20 @@ export default function ClassesPage() {
                 return (
                   <div>
                     <p style={{ marginBottom: '1rem', fontSize: '.875rem', color: 'var(--tx-muted)' }}>
-                      Assign one or more teachers to each subject for <strong>{form.grade} - {form.section}</strong>.
+                      {modal === 'add' ? (
+                        <>Assign one or more teachers to each subject for <strong>{form.grade} - {form.section}</strong>. <br/><span style={{fontSize: '.8rem', color: 'var(--clr-amber)'}}>Note: You must first assign subjects to this class from the Subjects page before you can assign teachers here.</span></>
+                      ) : (
+                        <>Assign one or more teachers to each subject for <strong>{form.grade} - {form.section}</strong>.</>
+                      )}
                     </p>
-                    <div className="table-wrap">
-                      <table>
+                    {applicableSubjects.length === 0 ? (
+                      <div style={{ padding: '1.5rem', textAlign: 'center', background: 'var(--bg-muted)', borderRadius: 'var(--r-lg)', border: '1px dashed var(--border)', color: 'var(--tx-muted)', fontSize: '.9rem' }}>
+                        No subjects are assigned to this class yet.<br/>
+                        Go to the <strong>Subjects</strong> page to assign subjects to this class.
+                      </div>
+                    ) : (
+                      <div className="table-wrap">
+                        <table>
                         <thead><tr><th>Subject</th><th>Assigned Teacher(s)</th></tr></thead>
                         <tbody>
                           {applicableSubjects.map(sub => {
@@ -370,14 +362,19 @@ export default function ClassesPage() {
                             );
                           })}
                         </tbody>
-                      </table>
-                    </div>
-                    <div style={{ marginTop: '.75rem', fontSize: '.8rem', color: 'var(--tx-muted)' }}>
-                      ✅ {assignedCount} of {applicableSubjects.length} subjects assigned
-                    </div>
+                        </table>
+                      </div>
+                    )}
+                    
+                    {applicableSubjects.length > 0 && (
+                      <div style={{ marginTop: '.75rem', fontSize: '.8rem', color: 'var(--tx-muted)' }}>
+                        ✅ {assignedCount} of {applicableSubjects.length} subjects assigned
+                      </div>
+                    )}
 
                     {/* ── OR Groups section ── */}
-                    <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+                    {applicableSubjects.length > 0 && (
+                      <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.75rem' }}>
                       <Link2 size={15} color="#7c3aed"/>
                       <strong style={{ fontSize: '.875rem' }}>OR Subject Groups</strong>

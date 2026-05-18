@@ -3,9 +3,7 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react';
 
-const GRADE_GROUPS = ['primary','middle','secondary','senior'];
-const EMPTY = { name:'', code:'', gradeGroups:[] };
-
+const EMPTY = { name:'', code:'', applicableClasses:[] };
 
 export default function SubjectsPage() {
   const { state, dispatch } = useApp();
@@ -13,8 +11,8 @@ export default function SubjectsPage() {
   const [form, setForm] = useState(EMPTY);
   const [confirmDel, setConfirmDel] = useState(null);
 
-  const openAdd = () => { setForm({ ...EMPTY, gradeGroups:[] }); setModal('add'); };
-  const openEdit = (s) => { setForm({ ...s, gradeGroups:[...s.gradeGroups] }); setModal(s); };
+  const openAdd = () => { setForm({ ...EMPTY, applicableClasses:[] }); setModal('add'); };
+  const openEdit = (s) => { setForm({ ...s, applicableClasses: s.applicableClasses ? [...s.applicableClasses] : [] }); setModal(s); };
 
   const save = () => {
     if (!form.name.trim()) return;
@@ -26,14 +24,22 @@ export default function SubjectsPage() {
     setModal(null);
   };
 
-  const toggleGroup = (g) => {
-    setForm(p => ({ ...p, gradeGroups: p.gradeGroups.includes(g) ? p.gradeGroups.filter(x=>x!==g) : [...p.gradeGroups, g] }));
+  const toggleClass = (cId) => {
+    setForm(p => ({ ...p, applicableClasses: p.applicableClasses.includes(cId) ? p.applicableClasses.filter(x=>x!==cId) : [...p.applicableClasses, cId] }));
   };
+
+  // Sort classes for display in modal
+  const sortedClasses = [...state.classes].sort((a, b) => {
+    const ga = parseInt(a.grade, 10) || 0;
+    const gb = parseInt(b.grade, 10) || 0;
+    if (ga !== gb) return ga - gb;
+    return (a.section || '').localeCompare(b.section || '');
+  });
 
   return (
     <div className="anim-fade-up">
       <div className="page-header">
-        <div><h2>Subjects</h2><p>Manage subjects and their grade group applicability</p></div>
+        <div><h2>Subjects</h2><p>Manage subjects and assign them to specific classes</p></div>
         <button className="btn btn-primary" onClick={openAdd}><Plus size={15}/> Add Subject</button>
       </div>
 
@@ -55,7 +61,14 @@ export default function SubjectsPage() {
               <h4 style={{ marginBottom:'.25rem' }}>{sub.name}</h4>
               <div style={{ fontSize:'.78rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Code: {sub.code}</div>
               <div style={{ display:'flex', gap:'.25rem', flexWrap:'wrap' }}>
-                {sub.gradeGroups.map(g => <span key={g} className="badge badge-gray" style={{ fontSize:'.7rem' }}>{g}</span>)}
+                {(sub.applicableClasses || []).length > 0 ? (
+                  (sub.applicableClasses || []).map(cid => {
+                    const cls = state.classes.find(c => c.id === cid);
+                    return <span key={cid} className="badge badge-gray" style={{ fontSize:'.7rem' }}>{cls ? cls.name : cid}</span>;
+                  })
+                ) : (
+                  <span className="badge badge-gray" style={{ fontSize:'.7rem', fontStyle: 'italic' }}>No classes assigned</span>
+                )}
               </div>
             </div>
           );
@@ -75,18 +88,22 @@ export default function SubjectsPage() {
                 <div className="field"><label>Subject Code *</label><input className="input" value={form.code} onChange={e=>setForm(p=>({...p,code:e.target.value.toUpperCase()}))} placeholder="e.g. MATH" maxLength={6}/></div>
               </div>
               <div className="field">
-                <label>Applicable Grade Groups</label>
-                <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap', marginTop:'.35rem' }}>
-                  {GRADE_GROUPS.map(g => (
-                    <button key={g} type="button"
-                      className={`badge ${form.gradeGroups.includes(g)?'badge-indigo':'badge-gray'}`}
-                      style={{ cursor:'pointer', padding:'.4rem .75rem', fontSize:'.82rem' }}
-                      onClick={()=>toggleGroup(g)}
-                    >
-                      {g.charAt(0).toUpperCase()+g.slice(1)}
-                    </button>
-                  ))}
-                </div>
+                <label>Applicable Classes</label>
+                {sortedClasses.length === 0 ? (
+                  <div style={{ fontSize: '.8rem', color: 'var(--tx-muted)' }}>No classes available. Please add classes first.</div>
+                ) : (
+                  <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap', marginTop:'.35rem' }}>
+                    {sortedClasses.map(c => (
+                      <button key={c.id} type="button"
+                        className={`badge ${(form.applicableClasses || []).includes(c.id)?'badge-indigo':'badge-gray'}`}
+                        style={{ cursor:'pointer', padding:'.4rem .75rem', fontSize:'.82rem' }}
+                        onClick={()=>toggleClass(c.id)}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="modal-footer">
