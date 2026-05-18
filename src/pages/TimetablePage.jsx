@@ -355,11 +355,12 @@ export default function TimetablePage() {
                         className={`tt-cell${slot ? ' assigned' : ''}`}
                         style={{
                           cursor: canEdit && viewMode==='class' && !locked && !blocked ? 'pointer' : 'default',
-                          background: locked ? '#fffbeb' : blocked ? 'repeating-linear-gradient(45deg,var(--bg-muted),var(--bg-muted) 4px,var(--bg-card) 4px,var(--bg-card) 10px)' : undefined,
+                          background: locked ? '#fffbeb' : undefined,
                           position: 'relative',
+                          visibility: blocked ? 'hidden' : 'visible',
                         }}
                         onClick={() => canEdit && viewMode==='class' && !blocked && openEdit(selectedClass, dayKey, p.period)}
-                        title={blocked ? 'Period not available for this class' : locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
+                        title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
                       >
                         {/* Lock icon — always visible (dimmed when unlocked, bright when locked) */}
                         {viewMode === 'class' && (
@@ -380,9 +381,7 @@ export default function TimetablePage() {
                           </button>
                         )}
                         <div className="tt-slot">
-                          {blocked ? (
-                            <span style={{ fontSize:'.7rem', color:'var(--tx-muted)', opacity:.6 }}>—</span>
-                          ) : slot ? (
+                          {slot ? (
                             <>
                               <span className="sub">{subject?.code}</span>
                               <span className="teacher">{teacher?.name?.split(' ')[0] ?? '—'}</span>
@@ -616,8 +615,15 @@ export default function TimetablePage() {
                         const slot = getCellForPrint(cid, dayKey, p.period);
                         const t = slot ? teachers.find(x=>x.id===slot.teacherId) : null;
                         const s = slot ? subjects.find(x=>x.id===slot.subjectId) : null;
+                        const blocked = isBlockedPeriod(cid, p.period);
                         return (
-                          <td key={p.period} className={`tt-cell${slot ? ' assigned' : ''}`}>
+                          <td
+                            key={p.period}
+                            className={`tt-cell${slot ? ' assigned' : ''}`}
+                            style={{
+                              visibility: blocked ? 'hidden' : 'visible'
+                            }}
+                          >
                             <div className="tt-slot">
                               {slot ? (
                                 <>
