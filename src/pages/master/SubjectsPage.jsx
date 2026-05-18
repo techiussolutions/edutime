@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
-import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react';
+import { Plus, Pencil, Trash2, BookOpen, Users } from 'lucide-react';
 
-const EMPTY = { name:'', code:'', applicableClasses:[] };
+const EMPTY = { name:'', code:'', applicableClasses:[], concurrent: false };
 
 export default function SubjectsPage() {
   const { state, dispatch } = useApp();
@@ -59,7 +59,14 @@ export default function SubjectsPage() {
                 </div>
               </div>
               <h4 style={{ marginBottom:'.25rem' }}>{sub.name}</h4>
-              <div style={{ fontSize:'.78rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>Code: {sub.code}</div>
+              <div style={{ fontSize:'.78rem', color:'var(--tx-muted)', marginBottom:'.5rem' }}>Code: {sub.code}</div>
+              {sub.concurrent && (
+                <div style={{ display:'flex', alignItems:'center', gap:'.3rem', fontSize:'.72rem',
+                  color:'#7c3aed', background:'#f5f3ff', border:'1px solid #c4b5fd',
+                  borderRadius:'var(--r-md)', padding:'.2rem .5rem', marginBottom:'.5rem', width:'fit-content' }}>
+                  <Users size={10}/> Concurrent
+                </div>
+              )}
               <div style={{ display:'flex', gap:'.25rem', flexWrap:'wrap' }}>
                 {(sub.applicableClasses || []).length > 0 ? (
                   (sub.applicableClasses || []).map(cid => {
@@ -86,6 +93,17 @@ export default function SubjectsPage() {
               <div className="grid-2">
                 <div className="field"><label>Subject Name *</label><input className="input" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Mathematics"/></div>
                 <div className="field"><label>Subject Code *</label><input className="input" value={form.code} onChange={e=>setForm(p=>({...p,code:e.target.value.toUpperCase()}))} placeholder="e.g. MATH" maxLength={6}/></div>
+              </div>
+              <div className="field">
+                <label style={{ display:'flex', alignItems:'center', gap:'.5rem', cursor:'pointer', userSelect:'none' }}>
+                  <input type="checkbox" checked={!!form.concurrent}
+                    onChange={e => setForm(p => ({ ...p, concurrent: e.target.checked }))}/>
+                  <span>Concurrent subject</span>
+                </label>
+                <p style={{ fontSize:'.75rem', color:'var(--tx-muted)', marginTop:'.25rem' }}>
+                  When enabled, this subject can be assigned to multiple classes at the same period without causing a teacher clash
+                  (e.g. Assembly, Morning Prayer, PE where all classes participate simultaneously).
+                </p>
               </div>
               <div className="field">
                 <label>Applicable Classes</label>

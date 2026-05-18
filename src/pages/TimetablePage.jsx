@@ -104,7 +104,8 @@ export default function TimetablePage() {
       const sub = subjects.find(s => s.id === a.subjectId);
       const teacher = teachers.find(t => t.id === a.teacherId);
       // Check if teacher is assigned elsewhere this slot
-      const busy = teacher ? schedule.some(s =>
+      const isConcurrent = !!sub?.concurrent;
+      const busy = !isConcurrent && teacher ? schedule.some(s =>
         s.teacherId===teacher.id && s.day===dIdx && s.period===period && s.id!==excludeId
       ) : false;
       // Check if blocked in availability settings

@@ -47,6 +47,10 @@ export function generateTimetable(state, requirements) {
   const globalNonBreak = settings.periodTimings
     .filter(p => !p.isBreak).map(p => p.period);
 
+  // Build a lookup of subject concurrency flags
+  const subjectMap = {};
+  subjects.forEach(s => { subjectMap[s.id] = s; });
+
   // Fast lookup: classId__subjectId → teacherIds[]
   const assignmentMap = {};
   classAssignments.forEach(a => {
@@ -109,8 +113,9 @@ export function generateTimetable(state, requirements) {
       shuffledDayIdxs.forEach((dayIdx, i) => {
         dayBudget[dayIdx] = minPerDay + (i < extras ? 1 : 0);
       });
+      const concurrent = !!(subjectMap[req.subjectId]?.concurrent);
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
-        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {} });
+        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent });
     });
   });
 
@@ -192,11 +197,12 @@ export function generateTimetable(state, requirements) {
       // Skip this slot if the period is blocked for this class
       if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
 
-      // Pick the best available teacher from the pool
-      // "Best" = free this slot + lightest load (load-balance across co-teachers)
+      // Pick the best available teacher from the pool.
+      // Concurrent subjects skip the teacher-busy check — the same teacher
+      // can teach multiple classes simultaneously for this subject.
       const freeTeachers = demand.teacherIds.filter(tid =>
-        !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
-        !usedTeachersThisSlot.has(tid) &&
+        (demand.concurrent || !teacherBusy.has(`${tid}_${dayIdx}_${period}`)) &&
+        (demand.concurrent || !usedTeachersThisSlot.has(tid)) &&
         teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
       );
       if (!freeTeachers.length) continue;
