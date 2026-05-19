@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../store/AppStore';
 import { analyzeStaffing, mergeNewSubjects, getDefaultRequirements } from '../../utils/generator';
@@ -160,7 +161,7 @@ export default function StaffingAnalysisPage() {
           if (last && last.subjectId === r.subjectId) { last.classes.push(r); }
           else subjectGroups.push({ subjectId: r.subjectId, subjectCode: r.subjectCode, subjectName: r.subjectName, classes: [r] });
         });
-        return (
+        return createPortal(
           <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setSelectedTeacher(null)}>
             <div className="modal" style={{ maxWidth: 560, width: '100%' }}>
               <div className="modal-header">
@@ -220,7 +221,7 @@ export default function StaffingAnalysisPage() {
               </div>
             </div>
           </div>
-        );
+        , document.body);
       })()}
 
       {/* Staffing List by Subject */}
