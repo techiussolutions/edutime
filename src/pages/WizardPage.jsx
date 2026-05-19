@@ -98,6 +98,7 @@ export default function WizardPage() {
     const entry = sch.find(s => s.classId === classId && s.day === dayIdx && s.period === period);
     if (!entry) return null;
     return {
+      entry,
       teacher: teachers.find(t => t.id === entry.teacherId),
       subject: subjects.find(s => s.id === entry.subjectId),
     };
@@ -699,8 +700,21 @@ export default function WizardPage() {
                                   )}
                                   {data ? (
                                     <div className="tt-slot">
-                                      <span className="sub" style={{ fontSize: '.76rem' }}>{data.subject?.code}</span>
-                                      <span className="teacher" style={{ fontSize: '.68rem' }}>{data.teacher?.name?.split(' ')[0]}</span>
+                                      {data.entry?.alternatives?.length > 1 ? (
+                                        <>
+                                          <span className="sub" style={{ fontSize: '.62rem' }}>
+                                            {data.entry.alternatives.map(a => subjects.find(s => s.id === a.subjectId)?.code ?? '?').join('/')}
+                                          </span>
+                                          <span className="teacher" style={{ fontSize: '.55rem' }}>
+                                            {data.entry.alternatives.map(a => teachers.find(t => t.id === a.teacherId)?.name?.split(' ')[0] ?? '—').join('/')}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="sub" style={{ fontSize: '.76rem' }}>{data.subject?.code}</span>
+                                          <span className="teacher" style={{ fontSize: '.68rem' }}>{data.teacher?.name?.split(' ')[0]}</span>
+                                        </>
+                                      )}
                                       {locked && <span style={{ fontSize: '.62rem', color: '#d97706' }}>locked</span>}
                                     </div>
                                   ) : <span style={{ fontSize: '.7rem', color: 'var(--tx-xmuted)' }}>—</span>}
