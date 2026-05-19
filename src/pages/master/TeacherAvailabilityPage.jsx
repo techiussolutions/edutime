@@ -66,14 +66,27 @@ export default function TeacherAvailabilityPage() {
   const setAllForDay = (dayKey, value) => {
     if (!selectedTeacherId) return;
     const teacherAvMap = { ...(teacherAvailability?.[selectedTeacherId] ?? {}) };
-    const dayMap = {};
-    nonBreakPeriods.forEach(p => { dayMap[p.period] = value; });
-    teacherAvMap[dayKey] = dayMap;
+    if (value === true) {
+      // Remove explicit entries so the day reverts to "available by default"
+      delete teacherAvMap[dayKey];
+    } else {
+      const dayMap = {};
+      nonBreakPeriods.forEach(p => { dayMap[p.period] = false; });
+      teacherAvMap[dayKey] = dayMap;
+    }
     dispatch({
       type: 'SET_TEACHER_AVAILABILITY',
       payload: { teacherId: selectedTeacherId, availability: teacherAvMap }
     });
     toast();
+  };
+
+  // Is this day considered "available" (i.e. not ALL periods blocked)?
+  const isDayAvailable = (teacherId, dayKey) => {
+    const avMap = teacherAvailability?.[teacherId] ?? {};
+    const dayMap = avMap[dayKey];
+    if (!dayMap) return true; // no entries → default available
+    return nonBreakPeriods.some(p => dayMap[p.period] !== false);
   };
 
   const resetTeacher = () => {
@@ -146,7 +159,9 @@ export default function TeacherAvailabilityPage() {
                     <div style={{ fontSize: '.7rem', color: 'var(--tx-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.department}</div>
                   </div>
                   {blk > 0 && (
-                    <span className="badge badge-red" style={{ fontSize: '.65rem', padding: '2px 5px', flexShrink: 0 }}>{blk}</span>
+                    <span className="badge badge-red" style={{ fontSize: '.6rem', padding: '2px 5px', flexShrink: 0 }}>
+                      {activeDays.filter(d => isDayAvailable(t.id, d)).join(' ')||'—'}
+                    </span>
                   )}
                 </button>
               );
@@ -173,7 +188,9 @@ export default function TeacherAvailabilityPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem' }}>
                   {blocked > 0 ? (
                     <span className="badge badge-red" style={{ padding: '.35rem .75rem', fontSize: '.8rem' }}>
-                      {blocked} slot{blocked !== 1 ? 's' : ''} blocked of {totalSlots}
+                      {activeDays.filter(d => !isDayAvailable(selectedTeacherId, d)).length > 0
+                        ? `Available: ${activeDays.filter(d => isDayAvailable(selectedTeacherId, d)).join(', ') || 'None'}`
+                        : `${blocked} slot${blocked !== 1 ? 's' : ''} blocked`}
                     </span>
                   ) : (
                     <span className="badge badge-green" style={{ padding: '.35rem .75rem', fontSize: '.8rem' }}>
@@ -188,10 +205,39 @@ export default function TeacherAvailabilityPage() {
                 </div>
               </div>
 
+              {/* Day-level quick setup */}
+              <div className="card card-body" style={{ marginBottom: '1rem', padding: '.75rem 1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '.8rem', fontWeight: 600, color: 'var(--tx-muted)', whiteSpace: 'nowrap' }}>Available on:</span>
+                  {activeDays.map(day => {
+                    const on = isDayAvailable(selectedTeacherId, day);
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => setAllForDay(day, !on)}
+                        title={on ? `Block all periods on ${day}` : `Unblock all periods on ${day}`}
+                        style={{
+                          padding: '.3rem .75rem', borderRadius: 20, cursor: 'pointer',
+                          border: `1.5px solid ${on ? '#86efac' : '#fca5a5'}`,
+                          background: on ? '#f0fdf4' : '#fef2f2',
+                          color: on ? 'var(--clr-green)' : 'var(--clr-red)',
+                          fontWeight: 700, fontSize: '.8rem', transition: 'all .15s',
+                        }}
+                      >
+                        {day} {on ? '✓' : '✕'}
+                      </button>
+                    );
+                  })}
+                  <span style={{ fontSize: '.75rem', color: 'var(--tx-muted)', marginLeft: '.25rem' }}>
+                    — click a day to toggle. Blocked days will be skipped entirely by the generator.
+                  </span>
+                </div>
+              </div>
+
               {/* Info banner */}
               <div className="alert alert-info" style={{ marginBottom: '1rem', fontSize: '.82rem' }}>
                 <CalendarCheck size={14} />
-                <span>Click any cell to toggle availability. <strong>Green = available</strong>, <strong>Red = not available</strong>. The timetable generator will skip unavailable slots.</span>
+                <span>Click any cell to toggle individual periods. <strong>Green = available</strong>, <strong>Red = not available</strong>. Use the day pills above to quickly block/unblock entire days.</span>
               </div>
 
               {/* Grid */}
@@ -203,19 +249,6 @@ export default function TeacherAvailabilityPage() {
                       {activeDays.map(day => (
                         <th key={day} style={{ padding: '.5rem .5rem', textAlign: 'center', fontSize: '.8rem', color: 'var(--tx-muted)', fontWeight: 600 }}>
                           <div>{day}</div>
-                          {/* Day-level quick toggles */}
-                          <div style={{ display: 'flex', justifyContent: 'center', gap: '.25rem', marginTop: '.3rem' }}>
-                            <button
-                              title="Set all available"
-                              onClick={() => setAllForDay(day, true)}
-                              style={{ border: 'none', background: 'var(--clr-green-l)', cursor: 'pointer', borderRadius: 4, padding: '2px 5px', fontSize: '.65rem', color: 'var(--clr-green)', fontWeight: 700 }}
-                            >All ✓</button>
-                            <button
-                              title="Set all unavailable"
-                              onClick={() => setAllForDay(day, false)}
-                              style={{ border: 'none', background: 'var(--clr-red-l)', cursor: 'pointer', borderRadius: 4, padding: '2px 5px', fontSize: '.65rem', color: 'var(--clr-red)', fontWeight: 700 }}
-                            >All ✕</button>
-                          </div>
                         </th>
                       ))}
                     </tr>
