@@ -446,7 +446,7 @@ export default function WizardPage() {
                           });
                         });
                         return rows;
-                      })()
+                      })()}
                     </tbody>
                   </table>
                 </div>
