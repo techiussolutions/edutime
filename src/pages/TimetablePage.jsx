@@ -142,7 +142,13 @@ export default function TimetablePage() {
       const unavailable = teacher ? teacherAvailability?.[teacher.id]?.[dayKey]?.[period] === false : false;
 
       // How many times this subject already appears for this class this week
-      const weekCount = schedule.filter(s => s.classId===classId && s.subjectId===a.subjectId).length;
+      // Count both primary subjectId slots AND slots where it appears in alternatives (OR groups)
+      const weekCount = schedule.filter(s =>
+        s.classId===classId && (
+          s.subjectId===a.subjectId ||
+          s.alternatives?.some(alt => alt.subjectId === a.subjectId)
+        )
+      ).length;
 
       // Configured periods/week limit for this subject in this class
       // Sum across all entries (multi-teacher subjects have one entry per teacher)
@@ -179,13 +185,29 @@ export default function TimetablePage() {
         if (!sub || !teacher) return null;
         const busy = !!schedule.find(s => s.teacherId === teacherId && s.day === dIdx && s.period === period && s.id !== excludeId);
         const unavailable = teacherAvailability?.[teacherId]?.[dayKey]?.[period] === false;
-        return { sub, teacher, subjectId: sid, teacherId, busy, unavailable };
+        // Period/week tracking for this subject (count alternatives slots too)
+        const weekCount = schedule.filter(s =>
+          s.classId === classId && (
+            s.subjectId === sid ||
+            s.alternatives?.some(alt => alt.subjectId === sid)
+          )
+        ).length;
+        const subjectEntries = state.periodsConfig?.[classId]?.filter(r => r.subjectId === sid) ?? [];
+        const configuredLimit = subjectEntries.length > 0
+          ? subjectEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
+          : null;
+        const alreadyHereAlt = currentSlot?.alternatives?.length > 1 &&
+          currentSlot.alternatives.some(a => a.subjectId === sid);
+        const projectedCount = alreadyHereAlt ? weekCount : weekCount + 1;
+        const atLimit = configuredLimit !== null && projectedCount > configuredLimit;
+        return { sub, teacher, subjectId: sid, teacherId, busy, unavailable, weekCount, configuredLimit, atLimit };
       }).filter(Boolean);
       if (members.length < 2) return null;
-      const anyBusy = members.some(m => m.busy || m.unavailable);
+      const anyBusy = members.some(m => m.busy || m.unavailable || m.atLimit);
+      const atLimitMember = members.find(m => m.atLimit);
       const isCurrentlyAssigned = currentSlot?.alternatives?.length > 1 &&
         members.every(m => currentSlot.alternatives.some(a => a.subjectId === m.subjectId));
-      return { label: grp.label, members, anyBusy, isCurrentlyAssigned };
+      return { label: grp.label, members, anyBusy, atLimitMember, isCurrentlyAssigned };
     }).filter(Boolean);
   }, [editing, state.classOrGroups, classAssignments, subjects, teachers, schedule, teacherAvailability]);
 
@@ -484,26 +506,37 @@ export default function TimetablePage() {
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'.625rem' }}>
                       {/* OR group combined cards */}
                       {orGroupOptions.map(grp => {
-                        const borderColor = grp.anyBusy ? 'var(--clr-red)' : grp.isCurrentlyAssigned ? 'var(--clr-primary)' : '#8b5cf6';
-                        const bgColor = grp.anyBusy ? '#fef2f2' : grp.isCurrentlyAssigned ? 'var(--clr-primary-l)' : '#f5f3ff';
+                        const isAtLimit = !!grp.atLimitMember;
+                        const borderColor = isAtLimit ? '#f97316'
+                          : grp.anyBusy ? 'var(--clr-red)'
+                          : grp.isCurrentlyAssigned ? 'var(--clr-primary)'
+                          : '#8b5cf6';
+                        const bgColor = isAtLimit ? '#fff7ed'
+                          : grp.anyBusy ? '#fef2f2'
+                          : grp.isCurrentlyAssigned ? 'var(--clr-primary-l)'
+                          : '#f5f3ff';
+                        const titleText = isAtLimit
+                          ? `Limit reached: ${grp.atLimitMember.sub.code} is at ${grp.atLimitMember.weekCount}/${grp.atLimitMember.configuredLimit} periods/week`
+                          : grp.anyBusy ? 'One or more teachers are busy this period'
+                          : `Assign OR group: ${grp.label}`;
                         return (
                           <button
                             key={grp.label}
                             onClick={() => !grp.anyBusy && quickAssignOrGroup(grp)}
-                            title={grp.anyBusy ? 'One or more teachers are busy this period' : `Assign OR group: ${grp.label}`}
+                            title={titleText}
                             style={{
                               display:'flex', flexDirection:'column', alignItems:'flex-start',
                               padding:'.75rem 1rem', borderRadius:'var(--r-lg)',
                               border:`2px solid ${borderColor}`,
                               background: bgColor,
                               cursor: grp.anyBusy ? 'not-allowed' : 'pointer',
-                              opacity: grp.anyBusy ? 0.65 : 1,
+                              opacity: grp.anyBusy && !isAtLimit ? 0.65 : 1,
                               minWidth:160, textAlign:'left',
                               transition:'all .15s',
                               position:'relative',
                             }}
                           >
-                            <span style={{ fontSize:'.65rem', fontWeight:800, letterSpacing:.5, background:'#8b5cf6', color:'#fff', borderRadius:4, padding:'1px 7px', marginBottom:'.35rem' }}>
+                            <span style={{ fontSize:'.65rem', fontWeight:800, letterSpacing:.5, background: isAtLimit ? '#f97316' : '#8b5cf6', color:'#fff', borderRadius:4, padding:'1px 7px', marginBottom:'.35rem' }}>
                               OR GROUP
                             </span>
                             <span style={{ fontWeight:700, fontSize:'.875rem', color:'var(--tx-main)' }}>
@@ -511,7 +544,16 @@ export default function TimetablePage() {
                             </span>
                             <div style={{ fontSize:'.75rem', color: grp.anyBusy ? 'var(--clr-red)' : 'var(--tx-muted)', marginTop:'.3rem' }}>
                               {grp.members.map(m => m.teacher.name.split(' ')[0]).join(' / ')}
-                              {grp.anyBusy && <span style={{ fontWeight:700 }}> · BUSY</span>}
+                              {grp.anyBusy && !isAtLimit && <span style={{ fontWeight:700 }}> · BUSY</span>}
+                            </div>
+                            {/* Per-member period counts */}
+                            <div style={{ fontSize:'.67rem', color: isAtLimit ? '#ea580c' : 'var(--tx-muted)', marginTop:'.25rem', fontWeight: isAtLimit ? 700 : 400 }}>
+                              {grp.members.map(m =>
+                                m.configuredLimit !== null
+                                  ? `${m.sub.code}: ${m.weekCount}/${m.configuredLimit}`
+                                  : `${m.sub.code}: ${m.weekCount}`
+                              ).join(' · ')}
+                              {isAtLimit && ' · LIMIT'}
                             </div>
                             {grp.isCurrentlyAssigned && !grp.anyBusy && (
                               <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
