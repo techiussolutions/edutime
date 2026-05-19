@@ -160,6 +160,35 @@ export default function TimetablePage() {
     }).filter(o => o.sub && o.teacher);
   }, [editing, classAssignments, subjects, teachers, schedule, state]);
 
+  // ── OR group options for the assign modal ─────────────────────────────────
+  const orGroupOptions = useMemo(() => {
+    if (!editing) return [];
+    const { classId, dayKey, period } = editing;
+    const dIdx = DAY_IDX[dayKey];
+    const groups = state.classOrGroups?.[classId] || [];
+    const currentSlot = schedule.find(s => s.classId === classId && s.day === dIdx && s.period === period);
+    const excludeId = `sch_${classId}_${dIdx}_${period}`;
+
+    return groups.map(grp => {
+      const members = grp.subjectIds.map(sid => {
+        const assignment = classAssignments.find(a => a.classId === classId && a.subjectId === sid);
+        if (!assignment) return null;
+        const sub = subjects.find(s => s.id === sid);
+        const teacherId = assignment.teacherIds?.[0] || assignment.teacherId;
+        const teacher = teachers.find(t => t.id === teacherId);
+        if (!sub || !teacher) return null;
+        const busy = !!schedule.find(s => s.teacherId === teacherId && s.day === dIdx && s.period === period && s.id !== excludeId);
+        const unavailable = teacherAvailability?.[teacherId]?.[dayKey]?.[period] === false;
+        return { sub, teacher, subjectId: sid, teacherId, busy, unavailable };
+      }).filter(Boolean);
+      if (members.length < 2) return null;
+      const anyBusy = members.some(m => m.busy || m.unavailable);
+      const isCurrentlyAssigned = currentSlot?.alternatives?.length > 1 &&
+        members.every(m => currentSlot.alternatives.some(a => a.subjectId === m.subjectId));
+      return { label: grp.label, members, anyBusy, isCurrentlyAssigned };
+    }).filter(Boolean);
+  }, [editing, state.classOrGroups, classAssignments, subjects, teachers, schedule, teacherAvailability]);
+
   // ── Open/close edit ──────────────────────────────────────────────────────
   const openEdit = (classId, dayKey, period) => {
     if (!canEdit || isLocked(classId, dayKey, period)) return;
@@ -172,8 +201,20 @@ export default function TimetablePage() {
     if (opt.busy || opt.unavailable || opt.atLimit) return;
     const { classId, dayKey, period } = editing;
     const dIdx = DAY_IDX[dayKey];
-    const id = slotId(classId, dayKey, period);
     dispatch({ type:'ASSIGN_SLOT', payload:{ classId, day:dIdx, period, teacherId:opt.teacherId, subjectId:opt.subjectId } });
+    setEditing(null); setConflict(null);
+  };
+
+  const quickAssignOrGroup = (grp) => {
+    if (grp.anyBusy) return;
+    const { classId, dayKey, period } = editing;
+    const dIdx = DAY_IDX[dayKey];
+    const primary = grp.members[0];
+    dispatch({ type:'ASSIGN_SLOT', payload:{
+      classId, day:dIdx, period,
+      teacherId: primary.teacherId, subjectId: primary.subjectId,
+      alternatives: grp.members.map(m => ({ subjectId: m.subjectId, teacherId: m.teacherId })),
+    }});
     setEditing(null); setConflict(null);
   };
 
@@ -435,13 +476,53 @@ export default function TimetablePage() {
                   <span style={{ marginLeft:'.5rem', color:'var(--clr-red)' }}>🔴 = teacher busy or unavailable</span>
                   <span style={{ marginLeft:'.5rem', color:'#ea580c' }}>🟠 = weekly period limit reached</span>
                 </p>
-                  {visualOptions.length === 0 ? (
+                  {visualOptions.length === 0 && orGroupOptions.length === 0 ? (
                     <div className="alert alert-warning">
                       No subject-teacher assignments found for this class. Go to <strong>Master Data → Classes</strong> to set them up.
                     </div>
                   ) : (
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'.625rem' }}>
-                      {visualOptions.map(opt => {
+                      {/* OR group combined cards */}
+                      {orGroupOptions.map(grp => {
+                        const borderColor = grp.anyBusy ? 'var(--clr-red)' : grp.isCurrentlyAssigned ? 'var(--clr-primary)' : '#8b5cf6';
+                        const bgColor = grp.anyBusy ? '#fef2f2' : grp.isCurrentlyAssigned ? 'var(--clr-primary-l)' : '#f5f3ff';
+                        return (
+                          <button
+                            key={grp.label}
+                            onClick={() => !grp.anyBusy && quickAssignOrGroup(grp)}
+                            title={grp.anyBusy ? 'One or more teachers are busy this period' : `Assign OR group: ${grp.label}`}
+                            style={{
+                              display:'flex', flexDirection:'column', alignItems:'flex-start',
+                              padding:'.75rem 1rem', borderRadius:'var(--r-lg)',
+                              border:`2px solid ${borderColor}`,
+                              background: bgColor,
+                              cursor: grp.anyBusy ? 'not-allowed' : 'pointer',
+                              opacity: grp.anyBusy ? 0.65 : 1,
+                              minWidth:160, textAlign:'left',
+                              transition:'all .15s',
+                              position:'relative',
+                            }}
+                          >
+                            <span style={{ fontSize:'.65rem', fontWeight:800, letterSpacing:.5, background:'#8b5cf6', color:'#fff', borderRadius:4, padding:'1px 7px', marginBottom:'.35rem' }}>
+                              OR GROUP
+                            </span>
+                            <span style={{ fontWeight:700, fontSize:'.875rem', color:'var(--tx-main)' }}>
+                              {grp.members.map(m => m.sub.code).join(' / ')}
+                            </span>
+                            <div style={{ fontSize:'.75rem', color: grp.anyBusy ? 'var(--clr-red)' : 'var(--tx-muted)', marginTop:'.3rem' }}>
+                              {grp.members.map(m => m.teacher.name.split(' ')[0]).join(' / ')}
+                              {grp.anyBusy && <span style={{ fontWeight:700 }}> · BUSY</span>}
+                            </div>
+                            {grp.isCurrentlyAssigned && !grp.anyBusy && (
+                              <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {/* Individual subject cards — hide subjects already in an OR group */}
+                      {(() => {
+                        const orSubjectIds = new Set(orGroupOptions.flatMap(g => g.members.map(m => m.subjectId)));
+                        return visualOptions.filter(o => !orSubjectIds.has(o.subjectId)).map(opt => {
                         const currentSlot = getCellData(editing.classId, editing.dayKey, editing.period);
                         const isCurrentlyAssigned = currentSlot?.subjectId===opt.subjectId;
                         const blocked = opt.busy || opt.unavailable || opt.atLimit;
@@ -498,7 +579,8 @@ export default function TimetablePage() {
                             )}
                           </button>
                         );
-                      })}
+                      });
+                      })()}
                     </div>
                   )}
 
