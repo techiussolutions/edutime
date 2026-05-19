@@ -32,9 +32,39 @@ export default async function handler(req, res) {
         `;
         break;
       }
-      case 'DELETE_TEACHER':
-        await db`DELETE FROM teachers WHERE id = ${payload} AND school_id = ${schoolId}`;
+      case 'DELETE_TEACHER': {
+        const dtId = payload;
+        await db`DELETE FROM teachers WHERE id = ${dtId} AND school_id = ${schoolId}`;
+        // Clear class_teacher_id references
+        await db`
+          UPDATE classes SET class_teacher_id = NULL
+          WHERE school_id = ${schoolId} AND class_teacher_id = ${dtId}
+        `;
+        // Remove teacher from class_subject_assignments
+        await db`
+          UPDATE class_subject_assignments
+          SET teacher_id = CASE WHEN teacher_id = ${dtId} THEN NULL ELSE teacher_id END,
+              teacher_ids = array_remove(teacher_ids, ${dtId})
+          WHERE school_id = ${schoolId}
+        `;
+        // Delete unlocked timetable slots where this teacher is the assigned teacher
+        await db`
+          DELETE FROM timetable_slots
+          WHERE school_id = ${schoolId} AND teacher_id = ${dtId} AND is_locked = false
+        `;
+        // Remove teacher from alternatives JSONB array on remaining slots
+        await db`
+          UPDATE timetable_slots
+          SET alternatives = (
+            SELECT jsonb_agg(elem)
+            FROM jsonb_array_elements(alternatives) AS elem
+            WHERE elem->>'teacherId' != ${dtId}
+          )
+          WHERE school_id = ${schoolId}
+            AND alternatives IS NOT NULL
+        `;
         break;
+      }
 
       // ── Classes ─────────────────────────────────────────
       case 'ADD_CLASS':
@@ -49,10 +79,20 @@ export default async function handler(req, res) {
         `;
         break;
       }
-      case 'DELETE_CLASS':
-        await db`DELETE FROM classes WHERE id = ${payload} AND school_id = ${schoolId}`;
-        await db`DELETE FROM class_subject_assignments WHERE class_id = ${payload} AND school_id = ${schoolId}`;
+      case 'DELETE_CLASS': {
+        const dcId = payload;
+        await db`DELETE FROM classes WHERE id = ${dcId} AND school_id = ${schoolId}`;
+        await db`DELETE FROM class_subject_assignments WHERE class_id = ${dcId} AND school_id = ${schoolId}`;
+        await db`DELETE FROM timetable_slots WHERE class_id = ${dcId} AND school_id = ${schoolId}`;
+        // Remove deleted class from applicable_classes of all subjects in this school
+        await db`
+          UPDATE subjects
+          SET applicable_classes = array_remove(applicable_classes, ${dcId})
+          WHERE school_id = ${schoolId}
+            AND applicable_classes @> ARRAY[${dcId}]::text[]
+        `;
         break;
+      }
 
       // ── Subjects ────────────────────────────────────────
       case 'ADD_SUBJECT':

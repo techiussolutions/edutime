@@ -163,8 +163,8 @@ export default function TimetableWizard({ onClose, onApply }) {
                   <button
                     key={cls.id}
                     onClick={() => setSelectedClass(cls.id)}
-                    className={`badge ${selectedClass === cls.id ? 'badge-indigo' : 'badge-gray'}`}
-                    style={{ cursor: 'pointer', padding: '.4rem .875rem', fontSize: '.85rem' }}
+                    className={`btn btn-sm ${selectedClass === cls.id ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ padding: '.35rem .85rem', fontSize: '.8rem', fontWeight: 600, borderRadius: 'var(--r-md)', minWidth: '60px', textAlign: 'center' }}
                   >
                     {cls.name}
                   </button>

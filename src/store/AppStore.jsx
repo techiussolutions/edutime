@@ -241,6 +241,10 @@ function reducer(state, action) {
         ...state,
         classes:            state.classes.filter(c => c.id !== dcId),
         classAssignments:  state.classAssignments.filter(a => a.classId !== dcId),
+        subjects:          state.subjects.map(s => ({
+          ...s,
+          applicableClasses: (s.applicableClasses || []).filter(cid => cid !== dcId),
+        })),
         periodsConfig:     Object.fromEntries(Object.entries(state.periodsConfig || {}).filter(([k]) => k !== dcId)),
         classPeriodSettings: Object.fromEntries(Object.entries(state.classPeriodSettings || {}).filter(([k]) => k !== dcId)),
         classOrGroups:     newClassOrGroups,

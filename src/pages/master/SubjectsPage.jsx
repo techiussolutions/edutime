@@ -68,14 +68,16 @@ export default function SubjectsPage() {
                 </div>
               )}
               <div style={{ display:'flex', gap:'.25rem', flexWrap:'wrap' }}>
-                {(sub.applicableClasses || []).length > 0 ? (
-                  (sub.applicableClasses || []).map(cid => {
-                    const cls = state.classes.find(c => c.id === cid);
-                    return <span key={cid} className="badge badge-gray" style={{ fontSize:'.7rem' }}>{cls ? cls.name : cid}</span>;
-                  })
-                ) : (
-                  <span className="badge badge-gray" style={{ fontSize:'.7rem', fontStyle: 'italic' }}>No classes assigned</span>
-                )}
+                {(() => {
+                  const knownClasses = (sub.applicableClasses || [])
+                    .map(cid => state.classes.find(c => c.id === cid))
+                    .filter(Boolean);
+                  return knownClasses.length > 0
+                    ? knownClasses.map(cls => (
+                        <span key={cls.id} className="badge badge-gray" style={{ fontSize:'.7rem' }}>{cls.name}</span>
+                      ))
+                    : <span className="badge badge-gray" style={{ fontSize:'.7rem', fontStyle: 'italic' }}>No classes assigned</span>;
+                })()}
               </div>
             </div>
           );
@@ -113,8 +115,8 @@ export default function SubjectsPage() {
                   <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap', marginTop:'.35rem' }}>
                     {sortedClasses.map(c => (
                       <button key={c.id} type="button"
-                        className={`badge ${(form.applicableClasses || []).includes(c.id)?'badge-indigo':'badge-gray'}`}
-                        style={{ cursor:'pointer', padding:'.4rem .75rem', fontSize:'.82rem' }}
+                        className={`btn btn-sm ${(form.applicableClasses || []).includes(c.id) ? 'btn-primary' : 'btn-outline'}`}
+                        style={{ padding:'.35rem .85rem', fontSize:'.8rem', fontWeight:600, borderRadius:'var(--r-md)', minWidth:'60px', textAlign:'center' }}
                         onClick={()=>toggleClass(c.id)}
                       >
                         {c.name}
