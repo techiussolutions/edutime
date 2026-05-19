@@ -22,7 +22,7 @@ export default function WizardPage() {
   const { state, dispatch, dbLoaded } = useApp();
   const navigate = useNavigate();
 
-  const { settings, teachers, subjects, classes, schedule, lockedSlots, classAssignments = [], periodsConfig = {}, classPeriodSettings = {} } = state;
+  const { settings, teachers, subjects, classes, schedule, lockedSlots, classAssignments = [], periodsConfig = {}, classPeriodSettings = {}, teacherAvailability = {} } = state;
   const activeDayCount = Object.values(settings.workingDays).filter(Boolean).length;
   const activeDayKeys = Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => { const o = {Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5}; return o[a]-o[b]; });
   const nonBreakPeriods = settings.periodTimings.filter(p => !p.isBreak);
@@ -212,8 +212,34 @@ export default function WizardPage() {
         }
       });
     });
+
+    // Check teacher availability coverage: total available slots >= total required periods/week
+    const teacherTotalRequired = {};
+    targetClasses.forEach(cls => {
+      (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
+        const asgn = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
+        if (!asgn) return;
+        const tids = asgn.teacherIds?.length ? asgn.teacherIds : (asgn.teacherId ? [asgn.teacherId] : []);
+        tids.forEach(tid => {
+          teacherTotalRequired[tid] = (teacherTotalRequired[tid] || 0) + req.periodsPerWeek;
+        });
+      });
+    });
+    const totalSlotCount = activeDayKeys.length * nonBreakPeriods.length;
+    Object.entries(teacherTotalRequired).forEach(([tid, required]) => {
+      const avMap = teacherAvailability[tid] || {};
+      const blockedCount = activeDayKeys.reduce((sum, dk) =>
+        sum + nonBreakPeriods.filter(p => avMap[dk]?.[p.period] === false).length, 0);
+      if (blockedCount === 0) return; // no restrictions set, skip
+      const available = totalSlotCount - blockedCount;
+      if (required > available) {
+        const t = teachers.find(t => t.id === tid);
+        issues.push({ type: 'error', msg: `${t?.name ?? tid}: needs ${required} periods/week but only ${available} of ${totalSlotCount} slots are available (${blockedCount} blocked by availability). Adjust in Master Data → Teacher Availability.` });
+      }
+    });
+
     return issues;
-  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount, genMode, selectedClassIds]);
+  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount, genMode, selectedClassIds, teacherAvailability, activeDayKeys, nonBreakPeriods, teachers]);
 
 
   const staffingAnalysis = useMemo(

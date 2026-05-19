@@ -411,6 +411,7 @@ export default function TimetablePage() {
                     const cls = slot && viewMode==='teacher' ? classes.find(c=>c.id===slot.classId) : null;
                     const locked = viewMode==='class' && isLocked(selectedClass, dayKey, p.period);
                     const blocked = false;
+                    const hasAvailViolation = slot && teacherAvailability?.[slot.teacherId]?.[dayKey]?.[p.period] === false;
 
                     return (
                       <td
@@ -418,12 +419,23 @@ export default function TimetablePage() {
                         className={`tt-cell${slot ? ' assigned' : ''}`}
                         style={{
                           cursor: canEdit && viewMode==='class' && !locked ? 'pointer' : 'default',
-                          background: locked ? '#fffbeb' : undefined,
+                          background: locked ? '#fffbeb' : hasAvailViolation ? '#fef2f2' : undefined,
                           position: 'relative',
                         }}
                         onClick={() => canEdit && viewMode==='class' && openEdit(selectedClass, dayKey, p.period)}
-                        title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
+                        title={locked ? (canEdit ? 'Locked — click 🔒 to unlock' : 'Locked') : hasAvailViolation ? `${teacher?.name} is not available this period` : (canEdit && viewMode==='class' ? 'Click to edit' : undefined)}
                       >
+                        {/* Availability violation indicator */}
+                        {hasAvailViolation && (
+                          <span style={{
+                            position:'absolute', top:3, left:3,
+                            fontSize:'.55rem', fontWeight:800, color:'var(--clr-red)',
+                            background:'#fca5a5', borderRadius:3, padding:'1px 4px',
+                            lineHeight:1.3, letterSpacing:.3,
+                          }} title={`${teacher?.name} is not available this period`}>
+                            ⚠
+                          </span>
+                        )}
                         {/* Lock icon — always visible (dimmed when unlocked, bright when locked) */}
                         {viewMode === 'class' && (
                           <button
@@ -581,6 +593,7 @@ export default function TimetablePage() {
                           : 'var(--clr-primary)';
                         const titleText = opt.atLimit
                           ? `Already at limit: ${opt.weekCount}/${opt.configuredLimit} periods this week`
+                          : opt.unavailable ? `${opt.teacher?.name} is not available this period`
                           : opt.busy ? `${opt.teacher?.name} is already teaching another class this period`
                           : `Assign ${opt.sub?.name} (${opt.teacher?.name})`;
                         return (
