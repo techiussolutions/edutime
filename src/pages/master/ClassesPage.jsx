@@ -439,7 +439,10 @@ export default function ClassesPage() {
                     </div>
 
                     {/* Existing OR groups */}
-                    {orGroups.map((grp, gi) => (
+                    {orGroups.map((grp, gi) => {
+                      // Peer classes: same grade, different section
+                      const peerClasses = state.classes.filter(c => c.grade === form.grade && c.id !== form.id);
+                      return (
                       <div key={gi} style={{ marginBottom: '.75rem', padding: '.75rem 1rem',
                         borderRadius: 'var(--r-lg)', border: '1.5px solid #c4b5fd', background: '#faf5ff' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.5rem' }}>
@@ -489,8 +492,48 @@ export default function ClassesPage() {
                             ⚠️ Select at least 2 subjects to form a valid OR group.
                           </div>
                         )}
+
+                        {/* Sync with other classes in same grade */}
+                        {peerClasses.length > 0 && (
+                          <div style={{ marginTop: '.75rem', borderTop: '1px dashed #c4b5fd', paddingTop: '.6rem' }}>
+                            <div style={{ fontSize: '.74rem', fontWeight: 700, color: '#7c3aed', marginBottom: '.35rem' }}>
+                              Sync this OR group with other divisions (same slot):
+                            </div>
+                            <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
+                              {peerClasses.map(pc => {
+                                const synced = (grp.syncClassIds || []).includes(pc.id);
+                                return (
+                                  <label key={pc.id} style={{
+                                    display: 'flex', alignItems: 'center', gap: '.3rem', cursor: 'pointer',
+                                    padding: '.2rem .55rem', borderRadius: 'var(--r-md)', fontSize: '.76rem',
+                                    border: `1.5px solid ${synced ? '#7c3aed' : 'var(--border)'}`,
+                                    background: synced ? '#ede9fe' : 'transparent',
+                                  }}>
+                                    <input type="checkbox" checked={synced}
+                                      onChange={e => setOrGroups(prev => prev.map((g, i) =>
+                                        i === gi ? {
+                                          ...g,
+                                          syncClassIds: e.target.checked
+                                            ? [...(g.syncClassIds || []), pc.id]
+                                            : (g.syncClassIds || []).filter(id => id !== pc.id)
+                                        } : g
+                                      ))}
+                                    />
+                                    <span style={{ fontWeight: 600 }}>{pc.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            {(grp.syncClassIds || []).length > 0 && (
+                              <div style={{ fontSize: '.7rem', color: 'var(--tx-muted)', marginTop: '.3rem' }}>
+                                This OR group will be scheduled at the same time slot across all selected divisions.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    );
+                    })}
 
                     {/* Add new group button */}
                     <button className="btn btn-ghost btn-sm"

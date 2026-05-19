@@ -60,12 +60,14 @@ export function generateTimetable(state, requirements) {
 
 
   // ── OR Group index (per-class config) ────────────────────────────────────
-  // Built from classOrGroups: { classId: [{label, subjectIds}] }
-  // Key: `${classId}__${label}` → [{subjectId, teacherId}]
+  // Built from classOrGroups: { classId: [{label, subjectIds, syncClassIds}] }
+  // Key: `${classId}__${label}` → [{subjectId, teacherIds}]
   const orGroupIndex = {};
   // Also build a reverse map: subjectId → label (within a classId)
   // so we can tag demands with their group membership.
   const subjectOrGroupLabel = {}; // `${classId}__${subjectId}` → label
+  // Cross-class OR sync: `${classId}__${label}` → [syncClassId, ...]
+  const syncGroupMap = {};
 
   targetClasses.forEach(cls => {
     const groups = classOrGroups[cls.id] || [];
@@ -79,6 +81,9 @@ export function generateTimetable(state, requirements) {
       grp.subjectIds.forEach(sid => {
         subjectOrGroupLabel[`${cls.id}__${sid}`] = grp.label;
       });
+      if (grp.syncClassIds?.length > 0) {
+        syncGroupMap[key] = grp.syncClassIds;
+      }
     });
   });
 
@@ -290,6 +295,68 @@ export function generateTimetable(state, requirements) {
           );
           if (sibDemand) sibDemand.remaining--;
         }
+
+        // ── Cross-class OR sync: place the same OR group slot in sibling classes ──
+        const syncClsIds = syncGroupMap[`${demand.classId}__${demand.orGroup}`] || [];
+        for (const syncCid of syncClsIds) {
+          if (classBusy.has(`${syncCid}_${dayIdx}_${period}`)) continue;
+          if (usedClassesThisSlot.has(syncCid)) continue;
+          if ((classPeriodSettings[syncCid]?.blockedPeriods || []).includes(period)) continue;
+
+          // Find the OR leader demand for the synced class
+          const syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
+          if (!syncLeaderDemand) continue;
+
+          const syncGroupKey = `${syncCid}__${demand.orGroup}`;
+          const syncSiblings = orGroupIndex[syncGroupKey];
+          if (!syncSiblings?.length) continue;
+
+          // Resolve free teachers for all subjects in the synced class's OR group
+          const syncAlts = syncSiblings.map(sib => {
+            const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+              !usedTeachersThisSlot.has(tid) &&
+              teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+            );
+            const chosen = freeSibTeachers.length
+              ? freeSibTeachers.reduce((best, tid) =>
+                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              : null;
+            return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+          });
+          if (!syncAlts.every(s => s.free)) continue;
+
+          // Use the leader's subject/teacher from syncAlts
+          const leaderAlt = syncAlts.find(s => s.subjectId === syncLeaderDemand.subjectId) || syncAlts[0];
+          const leaderTeacherObj = teachers.find(t => t.id === leaderAlt.teacherId);
+          if (leaderTeacherObj && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
+
+          // ✅ Assign the synced class slot
+          schedule.push({
+            id: `sch_${syncCid}_${dayIdx}_${period}`,
+            classId: syncCid, day: dayIdx, period,
+            teacherId: leaderAlt.teacherId, subjectId: leaderAlt.subjectId,
+            alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
+          });
+          teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+          classBusy.add(`${syncCid}_${dayIdx}_${period}`);
+          usedTeachersThisSlot.add(leaderAlt.teacherId);
+          usedClassesThisSlot.add(syncCid);
+          teacherLoad[leaderAlt.teacherId] = (teacherLoad[leaderAlt.teacherId] || 0) + 1;
+          syncLeaderDemand.remaining--;
+          syncLeaderDemand.dayCount[dayIdx] = (syncLeaderDemand.dayCount[dayIdx] || 0) + 1;
+
+          // Mark other sibling teachers busy and decrement their demands
+          for (const syncSib of syncAlts) {
+            if (syncSib.subjectId === leaderAlt.subjectId) continue;
+            if (syncSib.teacherId === leaderAlt.teacherId) continue;
+            teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+            usedTeachersThisSlot.add(syncSib.teacherId);
+            teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
+            const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
+            if (syncSibDemand) syncSibDemand.remaining--;
+          }
+        }
       }
     }
   }
@@ -372,6 +439,62 @@ export function generateTimetable(state, requirements) {
               d => d.classId === demand.classId && d.subjectId === sib.subjectId
             );
             if (sibDemand) sibDemand.remaining--;
+          }
+
+          // ── Cross-class OR sync (relaxed pass) ──
+          const syncClsIds = syncGroupMap[`${demand.classId}__${demand.orGroup}`] || [];
+          for (const syncCid of syncClsIds) {
+            if (classBusy.has(`${syncCid}_${dayIdx}_${period}`)) continue;
+            if (usedClassesThisSlot.has(syncCid)) continue;
+            if ((classPeriodSettings[syncCid]?.blockedPeriods || []).includes(period)) continue;
+
+            const syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
+            if (!syncLeaderDemand) continue;
+
+            const syncSiblings = orGroupIndex[`${syncCid}__${demand.orGroup}`];
+            if (!syncSiblings?.length) continue;
+
+            const syncAlts = syncSiblings.map(sib => {
+              const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+                !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+                !usedTeachersThisSlot.has(tid) &&
+                teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+              );
+              const chosen = freeSibTeachers.length
+                ? freeSibTeachers.reduce((best, tid) =>
+                    (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+                : null;
+              return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+            });
+            if (!syncAlts.every(s => s.free)) continue;
+
+            const leaderAlt = syncAlts.find(s => s.subjectId === syncLeaderDemand.subjectId) || syncAlts[0];
+            const leaderTeacherObj = teachers.find(t => t.id === leaderAlt.teacherId);
+            if (leaderTeacherObj && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
+
+            schedule.push({
+              id: `sch_${syncCid}_${dayIdx}_${period}`,
+              classId: syncCid, day: dayIdx, period,
+              teacherId: leaderAlt.teacherId, subjectId: leaderAlt.subjectId,
+              alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
+            });
+            teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+            classBusy.add(`${syncCid}_${dayIdx}_${period}`);
+            usedTeachersThisSlot.add(leaderAlt.teacherId);
+            usedClassesThisSlot.add(syncCid);
+            teacherLoad[leaderAlt.teacherId] = (teacherLoad[leaderAlt.teacherId] || 0) + 1;
+            syncLeaderDemand.remaining--;
+            syncLeaderDemand.dayCount[dayIdx] = (syncLeaderDemand.dayCount[dayIdx] || 0) + 1;
+
+            for (const syncSib of syncAlts) {
+              if (syncSib.subjectId === leaderAlt.subjectId) continue;
+              if (syncSib.teacherId === leaderAlt.teacherId) continue;
+              teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+              usedTeachersThisSlot.add(syncSib.teacherId);
+              teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
+              const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
+              if (syncSibDemand) syncSibDemand.remaining--;
+            }
           }
         }
       }
