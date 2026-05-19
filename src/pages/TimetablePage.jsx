@@ -19,7 +19,7 @@ export default function TimetablePage() {
     classPeriodSettings = {}
   } = state;
 
-  const [viewMode,       setViewMode]       = useState('class');
+  const [viewMode,       setViewMode]       = useState(() => localStorage.getItem('tt_view_mode') || 'class');
   const [selectedClass,  setSelectedClass]  = useState('');
   const [selectedTeacher,setSelectedTeacher]= useState('');
   const [editing,        setEditing]        = useState(null);   // { classId, dayKey, period }
@@ -39,18 +39,38 @@ export default function TimetablePage() {
     });
   }, [classes]);
 
-  // Keep selectedClass and selectedTeacher valid when data loads
+  // Persist view mode
+  useEffect(() => { localStorage.setItem('tt_view_mode', viewMode); }, [viewMode]);
+
+  // Persist & restore selectedClass
+  const classInitRef = useRef(false);
   useEffect(() => {
-    if (sortedClasses.length > 0 && !selectedClass) {
+    if (sortedClasses.length === 0) return;
+    if (!classInitRef.current) {
+      classInitRef.current = true;
+      const stored = localStorage.getItem('tt_selected_class');
+      const valid = stored && sortedClasses.find(c => c.id === stored);
+      setSelectedClass(valid ? stored : sortedClasses[0].id);
+    } else if (selectedClass && !sortedClasses.find(c => c.id === selectedClass)) {
       setSelectedClass(sortedClasses[0].id);
     }
   }, [sortedClasses, selectedClass]);
+  useEffect(() => { if (selectedClass) localStorage.setItem('tt_selected_class', selectedClass); }, [selectedClass]);
 
+  // Persist & restore selectedTeacher
+  const teacherInitRef = useRef(false);
   useEffect(() => {
-    if (teachers.length > 0 && !selectedTeacher) {
+    if (teachers.length === 0) return;
+    if (!teacherInitRef.current) {
+      teacherInitRef.current = true;
+      const stored = localStorage.getItem('tt_selected_teacher');
+      const valid = stored && teachers.find(t => t.id === stored);
+      setSelectedTeacher(valid ? stored : teachers[0].id);
+    } else if (selectedTeacher && !teachers.find(t => t.id === selectedTeacher)) {
       setSelectedTeacher(teachers[0].id);
     }
   }, [teachers, selectedTeacher]);
+  useEffect(() => { if (selectedTeacher) localStorage.setItem('tt_selected_teacher', selectedTeacher); }, [selectedTeacher]);
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
 

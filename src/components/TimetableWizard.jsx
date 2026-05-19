@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { generateTimetable, getDefaultRequirements } from '../utils/generator';
 import {
@@ -20,7 +20,17 @@ export default function TimetableWizard({ onClose, onApply }) {
   const [step, setStep] = useState(1);
 
   // Step 1 state: subject requirements per class
-  const [selectedClass, setSelectedClass] = useState(state.classes[0]?.id ?? '');
+  const sortedWizClasses = [...state.classes].sort((a, b) => {
+    const ga = parseInt(a.grade, 10) || 0, gb = parseInt(b.grade, 10) || 0;
+    if (ga !== gb) return ga - gb;
+    return (a.section || '').localeCompare(b.section || '');
+  });
+  const [selectedClass, setSelectedClass] = useState(() => {
+    const stored = localStorage.getItem('tt_selected_class');
+    const valid = stored && state.classes.find(c => c.id === stored);
+    return valid ? stored : (sortedWizClasses[0]?.id ?? '');
+  });
+  useEffect(() => { if (selectedClass) localStorage.setItem('tt_selected_class', selectedClass); }, [selectedClass]);
   const activeDayCount = Object.values(state.settings.workingDays).filter(Boolean).length;
 
   const [classSubjectMap, setClassSubjectMap] = useState(() =>
@@ -159,7 +169,7 @@ export default function TimetableWizard({ onClose, onApply }) {
 
               {/* Class selector */}
               <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-                {state.classes.map(cls => (
+                {sortedWizClasses.map(cls => (
                   <button
                     key={cls.id}
                     onClick={() => setSelectedClass(cls.id)}
