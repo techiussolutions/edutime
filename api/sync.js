@@ -134,10 +134,10 @@ export default async function handler(req, res) {
           for (const s of payload) {
             const slotId = s.id || `sch_${s.classId}_${s.day}_${s.period}`;
             await db`
-              INSERT INTO timetable_slots (id, school_id, class_id, day, period, teacher_id, subject_id, is_locked)
-              VALUES (${slotId}, ${schoolId}, ${s.classId}, ${s.day}, ${s.period}, ${s.teacherId || null}, ${s.subjectId || null}, false)
+              INSERT INTO timetable_slots (id, school_id, class_id, day, period, teacher_id, subject_id, is_locked, alternatives)
+              VALUES (${slotId}, ${schoolId}, ${s.classId}, ${s.day}, ${s.period}, ${s.teacherId || null}, ${s.subjectId || null}, false, ${s.alternatives ? JSON.stringify(s.alternatives) : null}::jsonb)
               ON CONFLICT (id, school_id) DO UPDATE SET
-                teacher_id = EXCLUDED.teacher_id, subject_id = EXCLUDED.subject_id
+                teacher_id = EXCLUDED.teacher_id, subject_id = EXCLUDED.subject_id, alternatives = EXCLUDED.alternatives
             `;
           }
         }
