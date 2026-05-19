@@ -108,19 +108,35 @@ export function generateTimetable(state, requirements) {
         if (orGroupLeaders.has(key)) return;
         orGroupLeaders.add(key);
       }
-      // Compute a strict per-day budget: evenly distribute periodsPerWeek across
-      // active days. minPerDay goes to every day; the remainder (extras) goes to
-      // randomly chosen days. This guarantees no day is skipped when P >= D.
-      const minPerDay = Math.floor(req.periodsPerWeek / activeDayKeys.length);
-      const extras    = req.periodsPerWeek % activeDayKeys.length;
-      const shuffledDayIdxs = shuffle(activeDayKeys.map(k => DAY_KEY_TO_IDX[k]));
+      // Distribute dayBudget only across days where this teacher pool is available.
+      // A teacher available only on Wednesday gets all their budget on Wednesday;
+      // unrestricted teachers get budget spread evenly as before.
+      const availableDays = activeDayKeys.filter(dk =>
+        teacherIds.some(tid => {
+          const avMap = teacherAvailability?.[tid] || {};
+          return settings.periodTimings.filter(p => !p.isBreak)
+            .some(p => avMap[dk]?.[p.period] !== false);
+        })
+      );
+      const daysForBudget = availableDays.length > 0 ? availableDays : activeDayKeys;
+      const minPerDay = Math.floor(req.periodsPerWeek / daysForBudget.length);
+      const extras    = req.periodsPerWeek % daysForBudget.length;
+      const shuffledDayIdxs = shuffle(daysForBudget.map(k => DAY_KEY_TO_IDX[k]));
       const dayBudget = {};
       shuffledDayIdxs.forEach((dayIdx, i) => {
         dayBudget[dayIdx] = minPerDay + (i < extras ? 1 : 0);
       });
+      // Count total slots where this teacher pool is available (used for MRV priority).
+      // Demands with fewer available slots are scheduled before unconstrained ones.
+      const availableSlotCount = activeDayKeys.reduce((sum, dk) => {
+        const avail = settings.periodTimings.filter(p => !p.isBreak).filter(p =>
+          teacherIds.some(tid => teacherAvailability?.[tid]?.[dk]?.[p.period] !== false)
+        ).length;
+        return sum + avail;
+      }, 0);
       const concurrent = !!(subjectMap[req.subjectId]?.concurrent);
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
-        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent });
+        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent, availableSlotCount });
     });
   });
 
@@ -208,11 +224,11 @@ export function generateTimetable(state, requirements) {
   }
 
   for (const { dayKey, dayIdx, period } of slots) {
-    // Get remaining demands, sorted by most-needed first (greedy), with random tiebreak.
-    // Demands that have hit their per-day cap for this day are excluded.
+    // Get remaining demands. Sort by: fewest available slots first (MRV — constrained
+    // teachers are placed before unrestricted ones), then most-needed, then random.
     const pending = demands
       .filter(d => d.remaining > 0 && (d.dayCount[dayIdx] || 0) < (d.dayBudget[dayIdx] ?? 0))
-      .sort((a, b) => b.remaining - a.remaining || Math.random() - 0.5);
+      .sort((a, b) => a.availableSlotCount - b.availableSlotCount || b.remaining - a.remaining || Math.random() - 0.5);
 
     // For this slot: pick an independent set — no two picks share a teacher or class
     const usedTeachersThisSlot = new Set();
@@ -386,7 +402,7 @@ export function generateTimetable(state, requirements) {
     for (const { dayKey, dayIdx, period } of slots) {
       const pending2 = demands
         .filter(d => d.remaining > 0)   // no dayBudget restriction
-        .sort((a, b) => b.remaining - a.remaining || Math.random() - 0.5);
+        .sort((a, b) => a.availableSlotCount - b.availableSlotCount || b.remaining - a.remaining || Math.random() - 0.5);
       if (!pending2.length) break;
 
       const usedTeachersThisSlot = new Set();
