@@ -381,11 +381,23 @@ export default function TimetablePage() {
                         )}
                         <div className="tt-slot">
                           {slot ? (
-                            <>
-                              <span className="sub">{subject?.code}</span>
-                              <span className="teacher">{teacher?.name?.split(' ')[0] ?? '—'}</span>
-                              {cls && <span className="cls">{cls.name}</span>}
-                            </>
+                            slot.alternatives?.length > 1 ? (
+                              <>
+                                <span className="sub" style={{ fontSize: '.62rem' }}>
+                                  {slot.alternatives.map(a => subjects.find(s=>s.id===a.subjectId)?.code ?? '?').join('/')}
+                                </span>
+                                <span className="teacher" style={{ fontSize: '.55rem' }}>
+                                  {slot.alternatives.map(a => teachers.find(t=>t.id===a.teacherId)?.name?.split(' ')[0] ?? '—').join('/')}
+                                </span>
+                                {cls && <span className="cls">{cls.name}</span>}
+                              </>
+                            ) : (
+                              <>
+                                <span className="sub">{subject?.code}</span>
+                                <span className="teacher">{teacher?.name?.split(' ')[0] ?? '—'}</span>
+                                {cls && <span className="cls">{cls.name}</span>}
+                              </>
+                            )
                           ) : (
                             viewMode==='class' && !locked && <span style={{ fontSize:'.72rem', color:'var(--tx-xmuted)' }}>+ Assign</span>
                           )}
@@ -621,14 +633,25 @@ export default function TimetablePage() {
                           >
                             <div className="tt-slot">
                               {slot ? (
-                                <>
-                                  <span className="sub" style={{ fontWeight: 800, fontSize: '.75rem', display: 'block', textTransform: 'uppercase' }}>
-                                    {s?.code || s?.name}
-                                  </span>
-                                  <span className="teacher" style={{ fontSize: '.62rem', display: 'block', marginTop: '2px', color: '#333333' }}>
-                                    {t?.name ?? '—'}
-                                  </span>
-                                </>
+                                slot.alternatives?.length > 1 ? (
+                                  <>
+                                    <span className="sub" style={{ fontWeight: 800, fontSize: '.65rem', display: 'block', textTransform: 'uppercase' }}>
+                                      {slot.alternatives.map(a => subjects.find(x=>x.id===a.subjectId)?.code ?? '?').join('/')}
+                                    </span>
+                                    <span className="teacher" style={{ fontSize: '.55rem', display: 'block', marginTop: '2px', color: '#333333' }}>
+                                      {slot.alternatives.map(a => teachers.find(x=>x.id===a.teacherId)?.name?.split(' ')[0] ?? '—').join('/')}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="sub" style={{ fontWeight: 800, fontSize: '.75rem', display: 'block', textTransform: 'uppercase' }}>
+                                      {s?.code || s?.name}
+                                    </span>
+                                    <span className="teacher" style={{ fontSize: '.62rem', display: 'block', marginTop: '2px', color: '#333333' }}>
+                                      {t?.name ?? '—'}
+                                    </span>
+                                  </>
+                                )
                               ) : null}
                             </div>
                           </td>
