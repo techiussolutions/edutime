@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../store/AppStore';
 import { analyzeStaffing, mergeNewSubjects, getDefaultRequirements } from '../../utils/generator';
-import { ClipboardList, AlertTriangle, Check, ArrowRight, UserPlus, ShieldAlert, X } from 'lucide-react';
+import { ClipboardList, AlertTriangle, Check, ArrowRight, UserPlus, ShieldAlert, X, Printer } from 'lucide-react';
 
 export default function StaffingAnalysisPage() {
   const { state } = useApp();
   const navigate = useNavigate();
 
-  const { settings, teachers, subjects, classes, classAssignments = [], periodsConfig = {} } = state;
+  const { settings, teachers, subjects, classes, classAssignments = [], periodsConfig = {}, school = {} } = state;
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const activeDayCount = Object.values(settings.workingDays).filter(Boolean).length;
 
@@ -68,14 +68,20 @@ export default function StaffingAnalysisPage() {
 
   return (
     <div className="anim-fade-up">
+      <div className="no-print">
       <div className="page-header" style={{ marginBottom: '1.5rem' }}>
         <div>
           <h2>Staffing & Teacher Load</h2>
           <p>Analyze teacher workload, class schedules, and subject allocations across the school.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate('/timetable/wizard')} style={{ gap: '.375rem' }}>
-          Configure Periods <ArrowRight size={14} />
-        </button>
+        <div style={{ display: 'flex', gap: '.5rem' }}>
+          <button className="btn btn-outline" onClick={() => window.print()} style={{ gap: '.375rem' }}>
+            <Printer size={14} /> Print Report
+          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/timetable/wizard')} style={{ gap: '.375rem' }}>
+            Configure Periods <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Overview Stats Cards */}
@@ -405,6 +411,77 @@ export default function StaffingAnalysisPage() {
           <span style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--clr-red)' }} />
           <span><strong>Overloaded (&gt;100%)</strong> — Exceeds the teacher's maximum periods cap!</span>
         </div>
+      </div>
+      </div>{/* end .no-print */}
+
+      {/* ── Teacher Allocation Print Report (hidden on screen) ─────────── */}
+      <div className="print-pages">
+        {teacherSummary.map(t => {
+          const rows = teacherClassDetails[t.teacherId] || [];
+          if (rows.length === 0) return null;
+          const barColor = t.status === 'critical' ? '#dc2626' : t.status === 'warn' ? '#d97706' : '#16a34a';
+          const statusLabel = t.status === 'critical' ? 'OVERLOADED' : t.status === 'warn' ? 'HIGH LOAD' : 'HEALTHY';
+          const subjectGroups = [];
+          rows.forEach(r => {
+            const last = subjectGroups[subjectGroups.length - 1];
+            if (last && last.subjectId === r.subjectId) last.classes.push(r);
+            else subjectGroups.push({ subjectId: r.subjectId, subjectCode: r.subjectCode, subjectName: r.subjectName, classes: [r] });
+          });
+          return (
+            <div key={t.teacherId} className="print-page">
+              <div className="print-page-header">
+                <h2>{school.name || 'School'} — Teacher Allocation Report</h2>
+                <p>Academic Year: {school.academicYear || ''} &nbsp;·&nbsp; Generated: {new Date().toLocaleDateString()}</p>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '.5rem 0', borderBottom: '1.5px solid #000', marginBottom: '.75rem' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{t.teacherName}</div>
+                  <div style={{ fontSize: '.8rem', marginTop: '.2rem' }}>
+                    {Math.round(t.totalLoad * 10) / 10} of {t.maxPeriods} periods/week &nbsp;·&nbsp; {t.utilisationPct}% utilisation
+                    {t.remaining < 0 && ` · ${Math.round(-t.remaining * 10) / 10} periods over limit`}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 700, fontSize: '.8rem', color: barColor }}>{statusLabel}</div>
+                  <div style={{ width: 130, height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden', marginTop: '.3rem', display: 'inline-block' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, t.utilisationPct)}%`, background: barColor }} />
+                  </div>
+                </div>
+              </div>
+              <table className="print-teacher-table">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Class</th>
+                    <th style={{ textAlign: 'right' }}>Periods / Week</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjectGroups.map((grp, gi) =>
+                    grp.classes.map((cls, ci) => (
+                      <tr key={`${grp.subjectId}_${cls.className}`} style={{ background: gi % 2 === 0 ? '#f0f4ff' : '#fff' }}>
+                        {ci === 0 ? (
+                          <td rowSpan={grp.classes.length} style={{ verticalAlign: 'middle' }}>
+                            <strong>{grp.subjectCode}</strong>
+                            <div style={{ fontSize: '.75rem' }}>{grp.subjectName}</div>
+                          </td>
+                        ) : null}
+                        <td>{cls.className}</td>
+                        <td style={{ textAlign: 'right' }}>{cls.periods}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2}><strong>Total Weekly Load</strong></td>
+                    <td style={{ textAlign: 'right' }}><strong style={{ color: barColor }}>{Math.round(t.totalLoad * 10) / 10}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
