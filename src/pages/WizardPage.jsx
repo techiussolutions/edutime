@@ -113,10 +113,36 @@ export default function WizardPage() {
             : s
         )
       };
-      // Persist immediately so it survives navigation
       dispatch({ type: 'SET_PERIODS_CONFIG', payload: next });
       return next;
     });
+  };
+
+  // Sets all subjects in an OR group to the same new period value
+  const updateOrGroupPeriods = (classId, subjectIds, delta) => {
+    setClassSubjectMap(prev => {
+      const currentVal = prev[classId]?.find(s => subjectIds.includes(s.subjectId))?.periodsPerWeek ?? 0;
+      const newVal = Math.max(0, Math.min(10, currentVal + delta));
+      const next = {
+        ...prev,
+        [classId]: prev[classId].map(s =>
+          subjectIds.includes(s.subjectId) ? { ...s, periodsPerWeek: newVal } : s
+        )
+      };
+      dispatch({ type: 'SET_PERIODS_CONFIG', payload: next });
+      return next;
+    });
+  };
+
+  // Compute effective total periods for a class — OR group subjects count as one slot
+  const getEffectiveTotalReq = (classId) => {
+    const orGrps = state.classOrGroups?.[classId] || [];
+    const orSubIds = new Set(orGrps.flatMap(g => g.subjectIds));
+    const orLeaders = new Set(orGrps.map(g => g.subjectIds[0]));
+    return (classSubjectMap[classId] || []).reduce((s, r) => {
+      if (orSubIds.has(r.subjectId)) return orLeaders.has(r.subjectId) ? s + r.periodsPerWeek : s;
+      return s + r.periodsPerWeek;
+    }, 0);
   };
 
   const handleGenerate = async () => {
@@ -166,7 +192,7 @@ export default function WizardPage() {
     targetClasses.forEach(cls => {
       const classNonBreak = getClassNonBreakCount(cls.id);
       const totalSlots = classNonBreak * activeDayCount;
-      const total = (classSubjectMap[cls.id] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
+      const total = getEffectiveTotalReq(cls.id);
       if (total > totalSlots) issues.push({ type: 'error', msg: `${cls.name}: needs ${total} periods but only ${totalSlots} slots available (${classNonBreak} periods/day × ${activeDayCount} days).` });
       else if (total < totalSlots) issues.push({ type: 'warn', msg: `${cls.name}: ${totalSlots - total} slot(s) will remain unassigned.` });
     });
@@ -309,7 +335,13 @@ export default function WizardPage() {
                     </thead>
                     <tbody>
                       {(() => {
-                        const totalReq = (classSubjectMap[selectedClass] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
+                        const orGrpDefs = state.classOrGroups?.[selectedClass] || [];
+                        const orSubIdsInGroups = new Set(orGrpDefs.flatMap(g => g.subjectIds));
+                        const orLeaders = new Set(orGrpDefs.map(g => g.subjectIds[0]));
+                        const totalReq = (classSubjectMap[selectedClass] || []).reduce((s, r) => {
+                          if (orSubIdsInGroups.has(r.subjectId)) return orLeaders.has(r.subjectId) ? s + r.periodsPerWeek : s;
+                          return s + r.periodsPerWeek;
+                        }, 0);
                         const over = totalReq > classAvailSlots;
                         // Group entries by subjectId to detect multi-teacher subjects
                         const grouped = {};
@@ -317,21 +349,67 @@ export default function WizardPage() {
                           if (!grouped[req.subjectId]) grouped[req.subjectId] = [];
                           grouped[req.subjectId].push(req);
                         });
-                        return Object.values(grouped).map(group => {
+                        const rows = [];
+                        const renderedSubjectIds = new Set();
+                        // OR group combined rows — show as one row with Subject1/Subject2 notation
+                        orGrpDefs.forEach(grp => {
+                          const members = grp.subjectIds.map(sid => {
+                            const sub = subjects.find(s => s.id === sid);
+                            const reqs = grouped[sid] || [];
+                            const asgn = classAssignments.find(a => a.classId === selectedClass && a.subjectId === sid);
+                            const teacherId = asgn?.teacherIds?.[0] || asgn?.teacherId;
+                            const teacher = teacherId ? teachers.find(t => t.id === teacherId) : null;
+                            return { sid, sub, reqs, teacher };
+                          }).filter(m => m.sub && m.reqs.length > 0);
+                          if (members.length < 2) return;
+                          const periodValue = members[0].reqs[0]?.periodsPerWeek ?? 0;
+                          const allSubjectIds = members.map(m => m.sid);
+                          rows.push(
+                            <tr key={`orgrp_${grp.label}`} style={{ borderTop: '1px solid var(--border)', background: '#f5f3ff' }}>
+                              <td>
+                                <div style={{ fontWeight: 700 }}>{members.map(m => m.sub.code).join(' / ')}</div>
+                                <div style={{ fontSize: '.72rem', color: '#8b5cf6', fontWeight: 600 }}>OR Group · {grp.label}</div>
+                                <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)', marginTop: '.1rem' }}>{members.map(m => m.sub.name).join(', ')}</div>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' }}>
+                                  <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
+                                    onClick={() => updateOrGroupPeriods(selectedClass, allSubjectIds, -1)}>−</button>
+                                  <span style={{ fontWeight: 700, fontSize: '1.05rem', minWidth: 22, textAlign: 'center', color: over && periodValue > 0 ? 'var(--clr-red)' : undefined }}>
+                                    {periodValue}
+                                  </span>
+                                  <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border)', borderRadius: 8 }}
+                                    onClick={() => updateOrGroupPeriods(selectedClass, allSubjectIds, 1)}>+</button>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem' }}>
+                                  {members.map(m => m.teacher
+                                    ? <span key={m.sid} className="badge badge-green" title={m.sub.name}>{m.sub.code}: {m.teacher.name.split(' ')[0]}</span>
+                                    : <span key={m.sid} style={{ color: 'var(--clr-red)', fontSize: '.8rem' }}>⚠ {m.sub.code} unassigned</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                          allSubjectIds.forEach(sid => renderedSubjectIds.add(sid));
+                        });
+                        // Individual subjects not in any OR group
+                        Object.values(grouped).forEach(group => {
+                          if (renderedSubjectIds.has(group[0].subjectId)) return;
                           const sub = subjects.find(s => s.id === group[0].subjectId);
                           const isMulti = group.length > 1;
-                          return group.map((req, idx) => {
+                          group.forEach((req, idx) => {
                             const teacher = req.teacherId ? teachers.find(t => t.id === req.teacherId) : null;
                             const asgn = !isMulti
                               ? classAssignments.find(a => a.classId === selectedClass && a.subjectId === req.subjectId)
                               : null;
                             const primaryId = !isMulti && (asgn?.teacherIds?.[0] || asgn?.teacherId);
                             const singleTeacher = primaryId ? teachers.find(t => t.id === primaryId) : null;
-                            return (
+                            rows.push(
                               <tr key={`${req.subjectId}_${req.teacherId ?? 'solo'}`}
                                 style={{ borderTop: idx === 0 ? '1px solid var(--border)' : 'none',
                                   background: isMulti && idx > 0 ? 'var(--bg-muted)' : undefined }}>
-                                {/* Subject cell — only rendered on the first row of the group */}
                                 {idx === 0 ? (
                                   <td rowSpan={group.length} style={{ verticalAlign: 'top', paddingTop: '.75rem' }}>
                                     <div style={{ fontWeight: 600 }}>{sub?.name}</div>
@@ -367,14 +445,15 @@ export default function WizardPage() {
                             );
                           });
                         });
-                      })()}
+                        return rows;
+                      })()
                     </tbody>
                   </table>
                 </div>
                 {/* Footer totals */}
                 <div style={{ padding: '.625rem 1.25rem', borderTop: '1px solid var(--border)', background: 'var(--bg-muted)', display: 'flex', justifyContent: 'flex-end', gap: '2rem', fontSize: '.82rem' }}>
                   {(() => {
-                    const req = (classSubjectMap[selectedClass] || []).reduce((s, r) => s + r.periodsPerWeek, 0);
+                    const req = getEffectiveTotalReq(selectedClass);
                     const avail = classAvailSlots;
                     return (
                       <>
