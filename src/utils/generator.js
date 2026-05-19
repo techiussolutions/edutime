@@ -136,7 +136,8 @@ export function generateTimetable(state, requirements) {
       }, 0);
       const concurrent = !!(subjectMap[req.subjectId]?.concurrent);
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
-        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent, availableSlotCount });
+        remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent,
+        availableSlotCount, availDays: daysForBudget });
     });
   });
 
@@ -222,6 +223,106 @@ export function generateTimetable(state, requirements) {
       if (round < slotsByDay[dayKey].length) slots.push(slotsByDay[dayKey][round]);
     }
   }
+
+  // ── Step 3a: PRIORITY PRE-PASS — schedule constrained teachers first ────────
+  // Teachers with limited availability (only 1 day, only 2 days, etc.) are placed
+  // completely BEFORE unconstrained teachers compete for those slots.
+  // Ordered: fewest available slots first → 1-day teachers → 2-day → ... → all-day.
+  // Unconstrained teachers (availableSlotCount === totalPossibleSlots) are skipped
+  // here and handled by the normal round-robin pass below.
+  {
+    const totalPossibleSlots = activeDayKeys.length * globalNonBreak.length;
+    const constrainedDemands = demands
+      .filter(d => d.availableSlotCount < totalPossibleSlots)
+      .sort((a, b) => a.availableSlotCount - b.availableSlotCount || b.remaining - a.remaining);
+
+    for (const demand of constrainedDemands) {
+      if (demand.remaining <= 0) continue;
+      // Skip cross-class synced OR groups — the main pass handles sync logic
+      if (demand.orGroup && syncGroupMap[`${demand.classId}__${demand.orGroup}`]?.length > 0) continue;
+
+      // Build a round-robin slot list using ONLY this demand's available days.
+      const preDaySlots = {};
+      for (const dk of demand.availDays) {
+        const di = DAY_KEY_TO_IDX[dk];
+        preDaySlots[dk] = shuffle(globalNonBreak.map(p => ({ dayKey: dk, dayIdx: di, period: p })));
+      }
+      const preMax = demand.availDays.length > 0
+        ? Math.max(...demand.availDays.map(dk => preDaySlots[dk].length))
+        : 0;
+      const preSlots = [];
+      for (let r = 0; r < preMax; r++) {
+        for (const dk of shuffle([...demand.availDays])) {
+          if (r < preDaySlots[dk].length) preSlots.push(preDaySlots[dk][r]);
+        }
+      }
+
+      for (const { dayKey, dayIdx, period } of preSlots) {
+        if (demand.remaining <= 0) break;
+        if ((demand.dayCount[dayIdx] || 0) >= (demand.dayBudget[dayIdx] ?? 0)) continue;
+        if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
+        if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+
+        const freeTeachers = demand.teacherIds.filter(tid =>
+          !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+          teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+        );
+        if (!freeTeachers.length) continue;
+
+        const chosenTeacherId = freeTeachers.reduce((best, tid) =>
+          (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
+        );
+        const teacher = teachers.find(t => t.id === chosenTeacherId);
+        if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+
+        // Handle non-synced OR group siblings
+        let alternatives = null;
+        if (demand.orGroup) {
+          const key = `${demand.classId}__${demand.orGroup}`;
+          const siblings = orGroupIndex[key] || [];
+          const allSiblingAlts = siblings.map(sib => {
+            const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+              teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+            );
+            const chosen = freeSibTeachers.length
+              ? freeSibTeachers.reduce((best, tid) =>
+                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              : null;
+            return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+          });
+          if (!allSiblingAlts.every(s => s.free)) continue;
+          alternatives = allSiblingAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId }));
+        }
+
+        // ✅ Assign
+        schedule.push({
+          id: `sch_${demand.classId}_${dayIdx}_${period}`,
+          classId: demand.classId, day: dayIdx, period,
+          teacherId: chosenTeacherId, subjectId: demand.subjectId,
+          alternatives,
+        });
+        teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+        classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
+        teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        demand.remaining--;
+        demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+
+        if (demand.orGroup && alternatives) {
+          for (const sib of alternatives) {
+            if (sib.teacherId === chosenTeacherId) continue;
+            teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+            teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+            const sibDemand = demands.find(
+              d => d.classId === demand.classId && d.subjectId === sib.subjectId
+            );
+            if (sibDemand) sibDemand.remaining--;
+          }
+        }
+      }
+    }
+  }
+  // ── Step 3b: Round-robin slot fill for remaining / unconstrained demands ──
 
   for (const { dayKey, dayIdx, period } of slots) {
     // Get remaining demands. Sort by: fewest available slots first (MRV — constrained
@@ -394,7 +495,7 @@ export function generateTimetable(state, requirements) {
     }
   }
 
-  // ── Step 3b: Relaxed pass — fill any still-unfilled demands ignoring dayBudget ──
+  // ── Step 3c: Relaxed pass — fill any still-unfilled demands ignoring dayBudget ──
   // Runs only when the main pass left demands unfilled (e.g. all budgeted-day slots
   // were claimed by other subjects first). Iterates the same slot list; classBusy
   // prevents double-booking, so this only touches genuinely empty class slots.
