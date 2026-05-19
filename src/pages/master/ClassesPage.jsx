@@ -98,6 +98,23 @@ export default function ClassesPage() {
     // Save OR groups (filter out empty ones)
     const validGroups = orGroups.filter(g => g.label.trim() && g.subjectIds.length >= 2);
     dispatch({ type: 'SET_CLASS_OR_GROUPS', payload: { classId, groups: validGroups } });
+
+    // Auto-propagate OR groups to synced classes so they don't need manual setup
+    validGroups.forEach(grp => {
+      if (!grp.syncClassIds?.length) return;
+      grp.syncClassIds.forEach(syncCid => {
+        const existing = (state.classOrGroups?.[syncCid] || []).filter(g => g.label !== grp.label);
+        dispatch({
+          type: 'SET_CLASS_OR_GROUPS',
+          payload: {
+            classId: syncCid,
+            // Keep other OR groups, add/replace this one (without syncClassIds to avoid circular)
+            groups: [...existing, { label: grp.label, subjectIds: grp.subjectIds, syncClassIds: [] }],
+          },
+        });
+      });
+    });
+
     setModal(null);
   };
 

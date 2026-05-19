@@ -304,12 +304,29 @@ export function generateTimetable(state, requirements) {
           if ((classPeriodSettings[syncCid]?.blockedPeriods || []).includes(period)) continue;
 
           // Find the OR leader demand for the synced class
-          const syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
-          if (!syncLeaderDemand) continue;
+          let syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
 
           const syncGroupKey = `${syncCid}__${demand.orGroup}`;
-          const syncSiblings = orGroupIndex[syncGroupKey];
+          // Use synced class's own OR group definition; fall back to source class's subjects
+          // with the synced class's teacher assignments (when OR group was auto-propagated)
+          let syncSiblings = orGroupIndex[syncGroupKey];
+          if (!syncSiblings?.length) {
+            const sourceSiblings = orGroupIndex[`${demand.classId}__${demand.orGroup}`] || [];
+            syncSiblings = sourceSiblings.map(s => ({
+              subjectId: s.subjectId,
+              teacherIds: assignmentMap[`${syncCid}__${s.subjectId}`] || [],
+            })).filter(s => s.teacherIds.length > 0);
+          }
           if (!syncSiblings?.length) continue;
+
+          // If no OR-group leader demand, fall back to any demand for the first matched subject
+          if (!syncLeaderDemand) {
+            for (const sib of syncSiblings) {
+              syncLeaderDemand = demands.find(d => d.classId === syncCid && d.subjectId === sib.subjectId && d.remaining > 0);
+              if (syncLeaderDemand) break;
+            }
+          }
+          if (!syncLeaderDemand) continue;
 
           // Resolve free teachers for all subjects in the synced class's OR group
           const syncAlts = syncSiblings.map(sib => {
@@ -448,11 +465,26 @@ export function generateTimetable(state, requirements) {
             if (usedClassesThisSlot.has(syncCid)) continue;
             if ((classPeriodSettings[syncCid]?.blockedPeriods || []).includes(period)) continue;
 
-            const syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
-            if (!syncLeaderDemand) continue;
+            let syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
 
-            const syncSiblings = orGroupIndex[`${syncCid}__${demand.orGroup}`];
+            // Use synced class's own OR group; fall back to source class's subjects with synced class's teacher assignments
+            let syncSiblings = orGroupIndex[`${syncCid}__${demand.orGroup}`];
+            if (!syncSiblings?.length) {
+              const sourceSiblings = orGroupIndex[`${demand.classId}__${demand.orGroup}`] || [];
+              syncSiblings = sourceSiblings.map(s => ({
+                subjectId: s.subjectId,
+                teacherIds: assignmentMap[`${syncCid}__${s.subjectId}`] || [],
+              })).filter(s => s.teacherIds.length > 0);
+            }
             if (!syncSiblings?.length) continue;
+
+            if (!syncLeaderDemand) {
+              for (const sib of syncSiblings) {
+                syncLeaderDemand = demands.find(d => d.classId === syncCid && d.subjectId === sib.subjectId && d.remaining > 0);
+                if (syncLeaderDemand) break;
+              }
+            }
+            if (!syncLeaderDemand) continue;
 
             const syncAlts = syncSiblings.map(sib => {
               const freeSibTeachers = (sib.teacherIds || []).filter(tid =>

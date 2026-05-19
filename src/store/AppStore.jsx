@@ -77,6 +77,7 @@ async function loadData(schoolId) {
     periodsConfig: settingsData.periodsConfig || {},
     classPeriodSettings: settingsData.classPeriodSettings || {},
     lockedSlots: settingsData.lockedSlots || [],
+    classOrGroups: settingsData.classOrGroups || {},
     teachers: (data.teachers || []).map(mapTeacherFromDb),
     classes: (data.classes || []).map(mapClassFromDb),
     subjects: (data.subjects || []).map(mapSubjectFromDb),
