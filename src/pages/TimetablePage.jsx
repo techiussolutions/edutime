@@ -3,7 +3,7 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
-import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2, BookmarkPlus, History, RotateCcw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2, BookmarkPlus, History, RotateCcw, Download, Upload } from 'lucide-react';
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
 const DAY_IDX  = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
@@ -33,6 +33,10 @@ export default function TimetablePage() {
   const [snapDesc,          setSnapDesc]          = useState('');
   const [showHistoryModal,  setShowHistoryModal]  = useState(false);
   const [restoringId,       setRestoringId]       = useState(null);
+  const [showImportModal,   setShowImportModal]   = useState(false);
+  const [importData,        setImportData]        = useState(null);  // parsed JSON
+  const [importError,       setImportError]       = useState('');
+  const importFileRef = useRef(null);
 
   // Sort classes numerically by grade, then section alphabetically
   const sortedClasses = useMemo(() => {
@@ -132,6 +136,56 @@ export default function TimetablePage() {
     dispatch({ type: 'BULK_SET_SCHEDULE', payload: snapshot.slots });
     setRestoringId(null);
     setShowHistoryModal(false);
+  };
+
+  // ── Export / Import JSON ─────────────────────────────────────────
+  const handleExport = () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      school: { name: school?.name || '', code: school?.code || '' },
+      slots: schedule,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href     = url;
+    a.download = `timetable_${(school?.code || 'export').toLowerCase()}_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ''; // reset so same file can be re-selected
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (!Array.isArray(parsed?.slots)) {
+          setImportError('Invalid file: missing slots array.');
+          setImportData(null);
+        } else {
+          setImportError('');
+          setImportData(parsed);
+        }
+        setShowImportModal(true);
+      } catch {
+        setImportError('Could not parse file — make sure it is a valid timetable JSON.');
+        setImportData(null);
+        setShowImportModal(true);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = () => {
+    if (!importData?.slots) return;
+    dispatch({ type: 'BULK_SET_SCHEDULE', payload: importData.slots });
+    setShowImportModal(false);
+    setImportData(null);
   };
 
   // All classes share the global period schedule; blocked periods are per-class config
@@ -319,6 +373,13 @@ export default function TimetablePage() {
                   <History size={15}/> History ({state.snapshots.length})
                 </button>
               )}
+              <button className="btn btn-outline no-print" onClick={handleExport} disabled={!schedule.length} title="Export timetable as JSON">
+                <Download size={15}/> Export
+              </button>
+              <button className="btn btn-outline no-print" onClick={() => importFileRef.current?.click()} title="Import timetable from JSON file">
+                <Upload size={15}/> Import
+              </button>
+              <input ref={importFileRef} type="file" accept=".json,application/json" style={{ display:'none' }} onChange={handleImportFile}/>
             </>
           )}
           {lockedSlots.length > 0 && (
@@ -515,6 +576,44 @@ export default function TimetablePage() {
               {canEdit && (
                 <button className="btn btn-outline" onClick={() => { setShowHistoryModal(false); setSnapName(''); setSnapDesc(''); setShowSaveModal(true); }}>
                   <BookmarkPlus size={14}/> Save Current
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Import Confirmation Modal ── */}
+      {showImportModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowImportModal(false)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <h3>Import Timetable</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowImportModal(false)}><X size={16}/></button>
+            </div>
+            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+              {importError ? (
+                <div style={{ display:'flex', gap:'.5rem', alignItems:'flex-start', color:'var(--clr-red)', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'.75rem 1rem', fontSize:'.87rem' }}>
+                  <AlertCircle size={16} style={{ flexShrink:0, marginTop:1 }}/> {importError}
+                </div>
+              ) : importData && (
+                <>
+                  <div style={{ background:'var(--bg-muted)', borderRadius:8, padding:'.75rem 1rem', fontSize:'.875rem', display:'flex', flexDirection:'column', gap:'.4rem' }}>
+                    {importData.school?.name && <div><strong>School:</strong> {importData.school.name} {importData.school.code ? `(${importData.school.code})` : ''}</div>}
+                    <div><strong>Slots:</strong> {importData.slots.length} timetable entries</div>
+                    {importData.exportedAt && <div><strong>Exported:</strong> {new Date(importData.exportedAt).toLocaleString()}</div>}
+                  </div>
+                  <p style={{ fontSize:'.85rem', color:'var(--tx-muted)', margin:0 }}>
+                    This will <strong>replace all unlocked slots</strong> in the current timetable. Locked slots are preserved. This action can be undone by restoring a saved version.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowImportModal(false)}>Cancel</button>
+              {!importError && importData && (
+                <button className="btn btn-primary" onClick={confirmImport}>
+                  <Upload size={14}/> Restore Timetable
                 </button>
               )}
             </div>
