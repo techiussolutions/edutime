@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../store/AppStore';
 import { formatAMPM } from '../utils/formatTime';
 import TimePicker from '../components/TimePicker';
@@ -26,6 +26,8 @@ export default function SettingsPage() {
 
   // School form
   const [schoolForm, setSchoolForm] = useState({ ...school });
+  // Re-sync when store hydrates (school is null on first render, populated after HYDRATE)
+  useEffect(() => { if (school?.id) setSchoolForm({ ...school }); }, [school?.id]);
   const saveSchool = () => { dispatch({ type:'UPDATE_SCHOOL', payload: schoolForm }); toast(); };
 
   // Working days
