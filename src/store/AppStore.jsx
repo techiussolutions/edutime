@@ -444,6 +444,7 @@ function reducer(state, action) {
       break;
 
     // Timetable snapshots
+    case 'SAVE_SNAPSHOT':
     case 'ADD_SNAPSHOT':
       next = { ...state, snapshots: [action.payload, ...state.snapshots] };
       break;
