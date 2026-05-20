@@ -294,6 +294,130 @@ export default async function handler(req, res) {
       }
 
 
+      // ── Full school restore from backup ────────────────
+      case 'RESTORE_SCHOOL_DATA': {
+        const bk = payload;
+
+        // 1 – Wipe existing data (order matters for FK constraints)
+        await db`DELETE FROM substitutions        WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM absences             WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM teacher_availability WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM timetable_snapshots  WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM timetable_slots      WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM class_subject_assignments WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM subjects             WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM classes              WHERE school_id = ${schoolId}`;
+        await db`DELETE FROM teachers             WHERE school_id = ${schoolId}`;
+
+        // 2 – Teachers
+        for (const t of (bk.teachers || [])) {
+          await db`
+            INSERT INTO teachers (id, school_id, name, department, subjects, max_periods, phone, email, designation, joining, active)
+            VALUES (${t.id}, ${schoolId}, ${t.name}, ${t.department||''}, ${t.subjects||[]}, ${t.maxPeriods??30}, ${t.phone||''}, ${t.email||''}, ${t.designation||''}, ${t.joining||''}, ${t.active!==false})
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              name=EXCLUDED.name, department=EXCLUDED.department, subjects=EXCLUDED.subjects,
+              max_periods=EXCLUDED.max_periods, phone=EXCLUDED.phone, email=EXCLUDED.email,
+              designation=EXCLUDED.designation, joining=EXCLUDED.joining, active=EXCLUDED.active
+          `;
+        }
+
+        // 3 – Classes
+        for (const c of (bk.classes || [])) {
+          await db`
+            INSERT INTO classes (id, school_id, name, grade, section, class_teacher_id)
+            VALUES (${c.id}, ${schoolId}, ${c.name}, ${c.grade}, ${c.section}, ${c.classTeacherId||null})
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              name=EXCLUDED.name, grade=EXCLUDED.grade, section=EXCLUDED.section, class_teacher_id=EXCLUDED.class_teacher_id
+          `;
+        }
+
+        // 4 – Subjects
+        for (const s of (bk.subjects || [])) {
+          await db`
+            INSERT INTO subjects (id, school_id, name, code, applicable_classes)
+            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses||[]})
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              name=EXCLUDED.name, code=EXCLUDED.code, applicable_classes=EXCLUDED.applicable_classes
+          `;
+        }
+
+        // 5 – Class-subject assignments
+        for (const a of (bk.classAssignments || [])) {
+          const ids = Array.isArray(a.teacherIds) && a.teacherIds.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+          await db`
+            INSERT INTO class_subject_assignments (id, school_id, class_id, subject_id, teacher_id, teacher_ids)
+            VALUES (${a.id}, ${schoolId}, ${a.classId}, ${a.subjectId}, ${ids[0]||null}, ${ids})
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              class_id=EXCLUDED.class_id, subject_id=EXCLUDED.subject_id, teacher_id=EXCLUDED.teacher_id, teacher_ids=EXCLUDED.teacher_ids
+          `;
+        }
+
+        // 6 – Timetable slots
+        for (const s of (bk.schedule || [])) {
+          const slotId = s.id || `sch_${s.classId}_${s.day}_${s.period}`;
+          await db`
+            INSERT INTO timetable_slots (id, school_id, class_id, day, period, teacher_id, subject_id, is_locked, alternatives)
+            VALUES (${slotId}, ${schoolId}, ${s.classId}, ${s.day}, ${s.period}, ${s.teacherId||null}, ${s.subjectId||null}, ${!!(bk.lockedSlots||[]).includes(slotId)}, ${s.alternatives ? JSON.stringify(s.alternatives) : null}::jsonb)
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              teacher_id=EXCLUDED.teacher_id, subject_id=EXCLUDED.subject_id,
+              is_locked=EXCLUDED.is_locked, alternatives=EXCLUDED.alternatives
+          `;
+        }
+
+        // 7 – Snapshots
+        for (const snap of (bk.snapshots || [])) {
+          await db`
+            INSERT INTO timetable_snapshots (id, school_id, name, description, slots, created_by, created_at)
+            VALUES (${snap.id}, ${schoolId}, ${snap.name}, ${snap.description||''}, ${JSON.stringify(snap.slots||[])}::jsonb, ${snap.createdBy||''}, ${snap.createdAt || new Date().toISOString()})
+            ON CONFLICT (id, school_id) DO UPDATE SET
+              name=EXCLUDED.name, description=EXCLUDED.description, slots=EXCLUDED.slots
+          `;
+        }
+
+        // 8 – Settings
+        if (bk.settings) {
+          const s = bk.settings;
+          await db`
+            INSERT INTO school_settings (
+              school_id, working_days, periods_per_day, period_timings, break_periods,
+              max_default_periods, substitution_priority, assembly_day, assembly_period,
+              periods_config, class_period_settings, locked_slots, setup_skipped, class_or_groups, updated_at
+            ) VALUES (
+              ${schoolId}, ${JSON.stringify(s.workingDays)}::jsonb, ${s.periodsPerDay},
+              ${JSON.stringify(s.periodTimings)}::jsonb, ${s.breakPeriods||[]}, ${s.maxDefaultPeriods},
+              ${s.substitutionPriority||[]}, ${s.assemblyDay||null}, ${s.assemblyPeriod||null},
+              ${JSON.stringify(bk.periodsConfig||{})}::jsonb,
+              ${JSON.stringify(bk.classPeriodSettings||{})}::jsonb,
+              ${bk.lockedSlots||[]}, ${s.setupSkipped||false},
+              ${JSON.stringify(bk.classOrGroups||{})}::jsonb,
+              ${new Date().toISOString()}
+            )
+            ON CONFLICT (school_id) DO UPDATE SET
+              working_days=EXCLUDED.working_days, periods_per_day=EXCLUDED.periods_per_day,
+              period_timings=EXCLUDED.period_timings, break_periods=EXCLUDED.break_periods,
+              max_default_periods=EXCLUDED.max_default_periods, substitution_priority=EXCLUDED.substitution_priority,
+              assembly_day=EXCLUDED.assembly_day, assembly_period=EXCLUDED.assembly_period,
+              periods_config=EXCLUDED.periods_config, class_period_settings=EXCLUDED.class_period_settings,
+              locked_slots=EXCLUDED.locked_slots, setup_skipped=EXCLUDED.setup_skipped,
+              class_or_groups=EXCLUDED.class_or_groups, updated_at=EXCLUDED.updated_at
+          `;
+        }
+
+        // 9 – School profile (name/code/board/etc.)
+        if (bk.school) {
+          const sc = bk.school;
+          await db`
+            UPDATE schools SET
+              name=${sc.name||''}, code=${sc.code||''}, board=${sc.board||''},
+              academic_year=${sc.academicYear||''},
+              address=${sc.address||''}
+            WHERE id = ${schoolId}
+          `;
+        }
+
+        break;
+      }
+
       // ── Seed initial data ──────────────────────────────
       case 'SEED': {
         const { settings, teachers, classes, subjects, assignments } = payload;

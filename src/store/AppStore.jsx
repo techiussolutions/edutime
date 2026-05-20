@@ -452,6 +452,27 @@ function reducer(state, action) {
       next = { ...state, snapshots: state.snapshots.filter(s => s.id !== action.payload) };
       break;
 
+    // Full school data restore from backup file
+    case 'RESTORE_SCHOOL_DATA': {
+      const d = action.payload;
+      next = {
+        ...state,
+        school:              d.school              ?? state.school,
+        settings:            d.settings            ?? state.settings,
+        periodsConfig:       d.periodsConfig       ?? state.periodsConfig,
+        classPeriodSettings: d.classPeriodSettings ?? state.classPeriodSettings,
+        classOrGroups:       d.classOrGroups       ?? state.classOrGroups,
+        lockedSlots:         d.lockedSlots         ?? state.lockedSlots,
+        teachers:            d.teachers            ?? state.teachers,
+        classes:             d.classes             ?? state.classes,
+        subjects:            d.subjects            ?? state.subjects,
+        classAssignments:    d.classAssignments    ?? state.classAssignments,
+        schedule:            d.schedule            ?? state.schedule,
+        snapshots:           d.snapshots           ?? state.snapshots,
+      };
+      break;
+    }
+
     default:
       return state;
   }

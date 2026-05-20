@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../store/AppStore';
 import { formatAMPM } from '../utils/formatTime';
 import TimePicker from '../components/TimePicker';
 import {
   Settings2, Clock, CalendarDays, Users, ShieldCheck, Plus, Trash2, Save,
-  ArrowUpFromLine, ArrowDownFromLine
+  ArrowUpFromLine, ArrowDownFromLine, Database, Download, Upload, AlertCircle
 } from 'lucide-react';
 
 const TABS = [
@@ -13,6 +13,7 @@ const TABS = [
   { id: 'periods',     label: 'Period Timings',     icon: Clock },
   { id: 'workload',    label: 'Workload Rules',     icon: Users },
   { id: 'sub_rules',  label: 'Substitution Rules', icon: ShieldCheck },
+  { id: 'data',        label: 'Data Backup',        icon: Database },
 ];
 
 export default function SettingsPage() {
@@ -24,11 +25,83 @@ export default function SettingsPage() {
 
   const toast = () => { setSaved(true); setTimeout(()=>setSaved(false), 2000); };
 
+  // Data backup state
+  const [importBackupData,  setImportBackupData]  = useState(null);
+  const [importBackupError, setImportBackupError] = useState('');
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [importing,         setImporting]         = useState(false);
+  const backupFileRef = useRef(null);
+
+  const toast = () => { setSaved(true); setTimeout(()=>setSaved(false), 2000); };
+
   // School form
   const [schoolForm, setSchoolForm] = useState({ ...school });
   // Re-sync when store hydrates (school is null on first render, populated after HYDRATE)
   useEffect(() => { if (school?.id) setSchoolForm({ ...school }); }, [school?.id]);
   const saveSchool = () => { dispatch({ type:'UPDATE_SCHOOL', payload: schoolForm }); toast(); };
+
+  // ── Data backup: export / import ────────────────────────────
+  const handleExportAll = () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      school:           state.school,
+      settings:         state.settings,
+      periodsConfig:    state.periodsConfig,
+      classPeriodSettings: state.classPeriodSettings,
+      classOrGroups:    state.classOrGroups,
+      lockedSlots:      state.lockedSlots,
+      teachers:         state.teachers,
+      classes:          state.classes,
+      subjects:         state.subjects,
+      classAssignments: state.classAssignments,
+      schedule:         state.schedule,
+      snapshots:        state.snapshots,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `edutime_backup_${(state.school?.code || 'school').toLowerCase()}_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBackupFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const valid  = parsed?.version && Array.isArray(parsed?.teachers) && Array.isArray(parsed?.classes) && Array.isArray(parsed?.schedule);
+        if (!valid) {
+          setImportBackupError('Invalid backup file: missing required fields (teachers, classes, schedule).');
+          setImportBackupData(null);
+        } else {
+          setImportBackupError('');
+          setImportBackupData(parsed);
+        }
+        setShowImportConfirm(true);
+      } catch {
+        setImportBackupError('Could not parse file — make sure it is a valid EduTime backup JSON.');
+        setImportBackupData(null);
+        setShowImportConfirm(true);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmRestoreBackup = async () => {
+    if (!importBackupData || importing) return;
+    setImporting(true);
+    dispatch({ type: 'RESTORE_SCHOOL_DATA', payload: importBackupData });
+    setImporting(false);
+    setShowImportConfirm(false);
+    setImportBackupData(null);
+    toast();
+  };
 
   // Working days
   const toggleDay = (d) => {
@@ -277,6 +350,81 @@ export default function SettingsPage() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* DATA BACKUP */}
+          {tab==='data' && (
+            <div className="card card-body anim-fade-in" style={{ display:'flex', flexDirection:'column', gap:'1.75rem' }}>
+              <input ref={backupFileRef} type="file" accept=".json,application/json" style={{ display:'none' }} onChange={handleBackupFile}/>
+
+              {/* Export */}
+              <div>
+                <h3 style={{ marginBottom:'.375rem' }}>Export School Data</h3>
+                <p style={{ fontSize:'.875rem', color:'var(--tx-muted)', marginBottom:'1rem' }}>
+                  Download a complete backup of all school data as a JSON file — teachers, classes, subjects, assignments, timetable, version history, and all settings.
+                </p>
+                <button className="btn btn-outline" onClick={handleExportAll}>
+                  <Download size={15}/> Export Full Backup
+                </button>
+              </div>
+
+              <div className="divider"/>
+
+              {/* Import */}
+              <div>
+                <h3 style={{ marginBottom:'.375rem' }}>Import & Restore</h3>
+                <p style={{ fontSize:'.875rem', color:'var(--tx-muted)', marginBottom:'.75rem' }}>
+                  Upload a backup file to restore all school data. This will replace the current timetable, teachers, classes, subjects, and settings with the data from the file.
+                </p>
+                <div className="alert" style={{ background:'#fef3c7', border:'1px solid #fcd34d', borderRadius:8, padding:'.75rem 1rem', fontSize:'.83rem', color:'#92400e', marginBottom:'1rem', display:'flex', gap:'.5rem', alignItems:'flex-start' }}>
+                  <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+                  <span><strong>Warning:</strong> Restoring a backup will overwrite all current school data. Export a fresh backup first if you want to keep the current state.</span>
+                </div>
+                <button className="btn btn-outline" style={{ borderColor:'var(--clr-amber)', color:'var(--clr-amber)' }} onClick={() => backupFileRef.current?.click()}>
+                  <Upload size={15}/> Choose Backup File…
+                </button>
+              </div>
+
+              {/* Confirm restore modal */}
+              {showImportConfirm && (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowImportConfirm(false)}>
+                  <div className="modal" style={{ maxWidth:480 }}>
+                    <div className="modal-header">
+                      <h3>Restore from Backup</h3>
+                      <button className="btn btn-ghost btn-icon" onClick={() => setShowImportConfirm(false)}>✕</button>
+                    </div>
+                    <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                      {importBackupError ? (
+                        <div style={{ display:'flex', gap:'.5rem', alignItems:'flex-start', color:'var(--clr-red)', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'.75rem 1rem', fontSize:'.87rem' }}>
+                          <AlertCircle size={16} style={{ flexShrink:0, marginTop:1 }}/> {importBackupError}
+                        </div>
+                      ) : importBackupData && (
+                        <>
+                          <div style={{ background:'var(--bg-muted)', borderRadius:8, padding:'.875rem 1rem', fontSize:'.875rem', display:'flex', flexDirection:'column', gap:'.45rem' }}>
+                            <div><strong>School:</strong> {importBackupData.school?.name || '—'} {importBackupData.school?.code ? `(${importBackupData.school.code})` : ''}</div>
+                            <div><strong>Teachers:</strong> {importBackupData.teachers?.length ?? 0} &nbsp;|&nbsp; <strong>Classes:</strong> {importBackupData.classes?.length ?? 0} &nbsp;|&nbsp; <strong>Subjects:</strong> {importBackupData.subjects?.length ?? 0}</div>
+                            <div><strong>Timetable slots:</strong> {importBackupData.schedule?.length ?? 0} &nbsp;|&nbsp; <strong>Snapshots:</strong> {importBackupData.snapshots?.length ?? 0}</div>
+                            {importBackupData.exportedAt && <div><strong>Exported:</strong> {new Date(importBackupData.exportedAt).toLocaleString()}</div>}
+                          </div>
+                          <div style={{ display:'flex', gap:'.5rem', alignItems:'flex-start', color:'#92400e', background:'#fef3c7', border:'1px solid #fcd34d', borderRadius:8, padding:'.75rem 1rem', fontSize:'.83rem' }}>
+                            <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+                            <span>This will <strong>replace all current school data</strong>. The action will sync to the server immediately.</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-ghost" onClick={() => setShowImportConfirm(false)}>Cancel</button>
+                      {!importBackupError && importBackupData && (
+                        <button className="btn btn-primary" onClick={confirmRestoreBackup} disabled={importing}>
+                          {importing ? 'Restoring…' : <><Upload size={14}/> Restore Backup</>}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
