@@ -17,6 +17,7 @@ const mapSlotFromDb   = (r)   => ({ id: r.id, classId: r.class_id, day: r.day, p
 const mapAbsenceFromDb = (r)  => ({ id: r.id, teacherId: r.teacher_id, date: r.date, leaveType: r.leave_type, reason: r.reason });
 const mapSubFromDb    = (r)   => ({ id: r.id, date: r.date, day: r.day, period: r.period, scheduleId: r.schedule_id, absentTeacherId: r.absent_teacher_id, substituteTeacherId: r.substitute_teacher_id, assignedBy: r.assigned_by });
 const mapSnapshotFromDb = (r) => ({ id: r.id, name: r.name, description: r.description, slots: r.slots || [], createdBy: r.created_by, createdAt: r.created_at });
+const mapSchoolFromDb   = (r) => ({ id: r.id, name: r.name, code: r.code, board: r.board, academicYear: r.academic_year || '', address: r.address || '', logo: r.logo || '🏫' });
 
 const mapSettingsFromDb = (r) => ({
   settings: { workingDays: r.working_days, periodsPerDay: r.periods_per_day, periodTimings: r.period_timings, breakPeriods: r.break_periods, maxDefaultPeriods: r.max_default_periods, substitutionPriority: r.substitution_priority, assemblyDay: r.assembly_day, assemblyPeriod: r.assembly_period, setupSkipped: r.setup_skipped || false },
@@ -79,6 +80,7 @@ async function loadData(schoolId) {
     classPeriodSettings: settingsData.classPeriodSettings || {},
     lockedSlots: settingsData.lockedSlots || [],
     classOrGroups: settingsData.classOrGroups || {},
+    school: data.schoolProfile ? mapSchoolFromDb(data.schoolProfile) : null,
     teachers: (data.teachers || []).map(mapTeacherFromDb),
     classes: (data.classes || []).map(mapClassFromDb),
     subjects: (data.subjects || []).map(mapSubjectFromDb),

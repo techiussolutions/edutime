@@ -18,7 +18,8 @@ export default async function handler(req, res) {
   if (!schoolId) return badRequest(res, 'schoolId required');
 
   // Parallel fetch all tables
-  const [settings, teachers, classes, subjects, assignments, slots, availability, absences, substitutions, snapshots] = await Promise.all([
+  const [schoolProfile, settings, teachers, classes, subjects, assignments, slots, availability, absences, substitutions, snapshots] = await Promise.all([
+    db`SELECT id, name, code, board, academic_year, address, logo FROM schools WHERE id = ${schoolId} LIMIT 1`,
     db`SELECT * FROM school_settings WHERE school_id = ${schoolId} LIMIT 1`,
     db`SELECT id, name, department, subjects, max_periods, phone, email, designation, joining, active FROM teachers WHERE school_id = ${schoolId}`,
     db`SELECT id, name, grade, section, class_teacher_id FROM classes WHERE school_id = ${schoolId}`,
@@ -32,6 +33,7 @@ export default async function handler(req, res) {
   ]);
 
   return res.json({
+    schoolProfile: schoolProfile[0] || null,
     settings: settings[0] || null,
     teachers,
     classes,
