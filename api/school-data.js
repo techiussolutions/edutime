@@ -13,8 +13,8 @@ export default async function handler(req, res) {
   const schoolId = req.query.schoolId || auth.schoolId;
   if (!schoolId) return badRequest(res, 'schoolId required');
 
-  // Parallel fetch all 9 tables
-  const [settings, teachers, classes, subjects, assignments, slots, availability, absences, substitutions] = await Promise.all([
+  // Parallel fetch all tables
+  const [settings, teachers, classes, subjects, assignments, slots, availability, absences, substitutions, snapshots] = await Promise.all([
     db`SELECT * FROM school_settings WHERE school_id = ${schoolId} LIMIT 1`,
     db`SELECT id, name, department, subjects, max_periods, phone, email, designation, joining, active FROM teachers WHERE school_id = ${schoolId}`,
     db`SELECT id, name, grade, section, class_teacher_id FROM classes WHERE school_id = ${schoolId}`,
@@ -24,6 +24,7 @@ export default async function handler(req, res) {
     db`SELECT teacher_id, day_key, period, available FROM teacher_availability WHERE school_id = ${schoolId}`,
     db`SELECT id, teacher_id, date, leave_type, reason FROM absences WHERE school_id = ${schoolId} ORDER BY date DESC LIMIT 500`,
     db`SELECT id, date, day, period, schedule_id, absent_teacher_id, substitute_teacher_id, assigned_by FROM substitutions WHERE school_id = ${schoolId} ORDER BY date DESC LIMIT 500`,
+    db`SELECT id, name, description, slots, created_by, created_at FROM timetable_snapshots WHERE school_id = ${schoolId} ORDER BY created_at DESC`,
   ]);
 
   return res.json({
@@ -36,6 +37,7 @@ export default async function handler(req, res) {
     availability,
     absences,
     substitutions,
+    snapshots,
     isEmpty: !teachers.length && !classes.length && !subjects.length,
   });
 }

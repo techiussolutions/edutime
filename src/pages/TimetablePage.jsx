@@ -3,14 +3,14 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
-import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2, BookmarkPlus, History, RotateCcw } from 'lucide-react';
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
 const DAY_IDX  = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
 
 export default function TimetablePage() {
   const { state, dispatch } = useApp();
-  const { can } = useAuth();
+  const { can, session } = useAuth();
   const navigate = useNavigate();
   const canEdit = can('editTimetable');
   const {
@@ -28,6 +28,11 @@ export default function TimetablePage() {
   const [printClassIds,     setPrintClassIds]     = useState([]);
   const [printTeacherIds,   setPrintTeacherIds]   = useState([]);
   const [confirmClear,      setConfirmClear]      = useState(null); // classId to clear, or null
+  const [showSaveModal,     setShowSaveModal]     = useState(false);
+  const [snapName,          setSnapName]          = useState('');
+  const [snapDesc,          setSnapDesc]          = useState('');
+  const [showHistoryModal,  setShowHistoryModal]  = useState(false);
+  const [restoringId,       setRestoringId]       = useState(null);
 
   // Sort classes numerically by grade, then section alphabetically
   const sortedClasses = useMemo(() => {
@@ -102,6 +107,31 @@ export default function TimetablePage() {
   const doPrint = () => {
     setShowPrintModal(false);
     setTimeout(() => window.print(), 100);
+  };
+
+  // ── Snapshot helpers ───────────────────────────────────────────────────
+  const saveSnapshot = () => {
+    if (!snapName.trim()) return;
+    const id = `snap_${Date.now()}`;
+    const snapshot = {
+      id,
+      name: snapName.trim(),
+      description: snapDesc.trim(),
+      slots: schedule,
+      createdBy: session?.user?.email || '',
+      createdAt: new Date().toISOString(),
+    };
+    dispatch({ type: 'SAVE_SNAPSHOT', payload: snapshot });
+    setSnapName(''); setSnapDesc(''); setShowSaveModal(false);
+  };
+  const deleteSnapshot = (id) => {
+    dispatch({ type: 'DELETE_SNAPSHOT', payload: id });
+  };
+  const restoreSnapshot = async (snapshot) => {
+    setRestoringId(snapshot.id);
+    dispatch({ type: 'BULK_SET_SCHEDULE', payload: snapshot.slots });
+    setRestoringId(null);
+    setShowHistoryModal(false);
   };
 
   // All classes share the global period schedule; blocked periods are per-class config
@@ -279,6 +309,18 @@ export default function TimetablePage() {
           <button className="btn btn-outline no-print" onClick={openPrintModal} title="Print / Save as PDF">
             <Printer size={15}/> Print
           </button>
+          {canEdit && (
+            <>
+              <button className="btn btn-outline no-print" onClick={() => { setSnapName(''); setSnapDesc(''); setShowSaveModal(true); }} title="Save timetable snapshot">
+                <BookmarkPlus size={15}/> Save Version
+              </button>
+              {state.snapshots?.length > 0 && (
+                <button className="btn btn-outline no-print" onClick={() => setShowHistoryModal(true)} title="View saved versions">
+                  <History size={15}/> History ({state.snapshots.length})
+                </button>
+              )}
+            </>
+          )}
           {lockedSlots.length > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:'.375rem', fontSize:'.82rem', color:'#92400e', background:'#fef3c7', border:'1px solid #fcd34d', padding:'.35rem .75rem', borderRadius:20 }}>
               <Lock size={13}/> {lockedSlots.length} locked
@@ -380,6 +422,101 @@ export default function TimetablePage() {
                 dispatch({ type: 'CLEAR_CLASS_SCHEDULE', payload: confirmClear });
                 setConfirmClear(null);
               }}>Clear Unlocked Slots</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Save Version Modal ── */}
+      {showSaveModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSaveModal(false)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <h3>Save Timetable Version</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowSaveModal(false)}><X size={16}/></button>
+            </div>
+            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+              <div>
+                <label className="label">Version Name <span style={{ color:'var(--clr-red)' }}>*</span></label>
+                <input
+                  className="input" autoFocus
+                  placeholder="e.g. Week 1 Draft, Final Approved…"
+                  value={snapName} onChange={e => setSnapName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && saveSnapshot()}
+                />
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <textarea
+                  className="input" rows={3}
+                  placeholder="Optional notes about this version…"
+                  value={snapDesc} onChange={e => setSnapDesc(e.target.value)}
+                  style={{ resize:'vertical' }}
+                />
+              </div>
+              <p style={{ fontSize:'.82rem', color:'var(--tx-muted)', margin:0 }}>
+                Saves a snapshot of the current timetable ({schedule.length} slots). You can restore it later from Version History.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowSaveModal(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={!snapName.trim()} onClick={saveSnapshot}>
+                <BookmarkPlus size={14}/> Save Version
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── History Modal ── */}
+      {showHistoryModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowHistoryModal(false)}>
+          <div className="modal" style={{ maxWidth: 580 }}>
+            <div className="modal-header">
+              <h3>Version History</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowHistoryModal(false)}><X size={16}/></button>
+            </div>
+            <div className="modal-body" style={{ padding:0, maxHeight:'60vh', overflowY:'auto' }}>
+              {(state.snapshots || []).length === 0 ? (
+                <p style={{ padding:'2rem', textAlign:'center', color:'var(--tx-muted)' }}>No saved versions yet.</p>
+              ) : (state.snapshots || []).map(snap => (
+                <div key={snap.id} style={{ display:'flex', alignItems:'flex-start', gap:'1rem', padding:'1rem 1.25rem', borderBottom:'1px solid var(--border)' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:600, fontSize:'.95rem' }}>{snap.name}</div>
+                    {snap.description && <div style={{ fontSize:'.82rem', color:'var(--tx-muted)', marginTop:2 }}>{snap.description}</div>}
+                    <div style={{ fontSize:'.75rem', color:'var(--tx-muted)', marginTop:4 }}>
+                      {snap.slots?.length ?? 0} slots &middot; {snap.createdBy && <>{snap.createdBy} &middot; </>}
+                      {snap.createdAt ? new Date(snap.createdAt).toLocaleString() : ''}
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', gap:'.5rem', flexShrink:0 }}>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      disabled={restoringId === snap.id}
+                      onClick={() => restoreSnapshot(snap)}
+                      title="Restore this version"
+                    >
+                      <RotateCcw size={13}/> {restoringId === snap.id ? 'Restoring…' : 'Restore'}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-icon btn-sm"
+                      onClick={() => deleteSnapshot(snap.id)}
+                      title="Delete this version"
+                      style={{ color:'var(--clr-red)' }}
+                    >
+                      <Trash2 size={13}/>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowHistoryModal(false)}>Close</button>
+              {canEdit && (
+                <button className="btn btn-outline" onClick={() => { setShowHistoryModal(false); setSnapName(''); setSnapDesc(''); setShowSaveModal(true); }}>
+                  <BookmarkPlus size={14}/> Save Current
+                </button>
+              )}
             </div>
           </div>
         </div>

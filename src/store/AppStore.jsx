@@ -16,6 +16,7 @@ const mapAssignFromDb = (r)   => ({ id: r.id, classId: r.class_id, subjectId: r.
 const mapSlotFromDb   = (r)   => ({ id: r.id, classId: r.class_id, day: r.day, period: r.period, teacherId: r.teacher_id, subjectId: r.subject_id, alternatives: r.alternatives || null });
 const mapAbsenceFromDb = (r)  => ({ id: r.id, teacherId: r.teacher_id, date: r.date, leaveType: r.leave_type, reason: r.reason });
 const mapSubFromDb    = (r)   => ({ id: r.id, date: r.date, day: r.day, period: r.period, scheduleId: r.schedule_id, absentTeacherId: r.absent_teacher_id, substituteTeacherId: r.substitute_teacher_id, assignedBy: r.assigned_by });
+const mapSnapshotFromDb = (r) => ({ id: r.id, name: r.name, description: r.description, slots: r.slots || [], createdBy: r.created_by, createdAt: r.created_at });
 
 const mapSettingsFromDb = (r) => ({
   settings: { workingDays: r.working_days, periodsPerDay: r.periods_per_day, periodTimings: r.period_timings, breakPeriods: r.break_periods, maxDefaultPeriods: r.max_default_periods, substitutionPriority: r.substitution_priority, assemblyDay: r.assembly_day, assemblyPeriod: r.assembly_period, setupSkipped: r.setup_skipped || false },
@@ -86,6 +87,7 @@ async function loadData(schoolId) {
     teacherAvailability: buildAvailabilityMap(data.availability || []),
     absences: (data.absences || []).map(mapAbsenceFromDb),
     substitutions: (data.substitutions || []).map(mapSubFromDb),
+    snapshots: (data.snapshots || []).map(mapSnapshotFromDb),
   };
 }
 
@@ -114,6 +116,7 @@ const DEFAULT_STATE = {
   lockedSlots: [],
   absences: [],
   substitutions: [],
+  snapshots: [],
   notifications: [],
   teacherAvailability: {},
 };
@@ -438,6 +441,14 @@ function reducer(state, action) {
     }
     case 'REMOVE_SUBSTITUTE':
       next = { ...state, substitutions: state.substitutions.filter(s => s.id !== action.payload) };
+      break;
+
+    // Timetable snapshots
+    case 'ADD_SNAPSHOT':
+      next = { ...state, snapshots: [action.payload, ...state.snapshots] };
+      break;
+    case 'DELETE_SNAPSHOT':
+      next = { ...state, snapshots: state.snapshots.filter(s => s.id !== action.payload) };
       break;
 
     default:

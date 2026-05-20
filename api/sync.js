@@ -193,6 +193,21 @@ export default async function handler(req, res) {
         await db`UPDATE timetable_slots SET is_locked = false WHERE school_id = ${schoolId}`;
         break;
 
+      // ── Timetable snapshots ─────────────────────────────
+      case 'SAVE_SNAPSHOT': {
+        const { id: snapId, name, description, slots: snapSlots, createdBy } = payload;
+        await db`
+          INSERT INTO timetable_snapshots (id, school_id, name, description, slots, created_by)
+          VALUES (${snapId}, ${schoolId}, ${name}, ${description || ''}, ${JSON.stringify(snapSlots)}::jsonb, ${createdBy || ''})
+          ON CONFLICT (id, school_id) DO UPDATE SET
+            name = EXCLUDED.name, description = EXCLUDED.description, slots = EXCLUDED.slots
+        `;
+        break;
+      }
+      case 'DELETE_SNAPSHOT':
+        await db`DELETE FROM timetable_snapshots WHERE id = ${payload} AND school_id = ${schoolId}`;
+        break;
+
       // ── Teacher availability ────────────────────────────
       case 'SET_TEACHER_AVAILABILITY': {
         const { teacherId, availability } = payload;
