@@ -468,6 +468,15 @@ export function AppProvider({ children }) {
   const settingsSyncTimer = useRef(null);
   const prevSchoolId = useRef(null);
 
+  // ── Reset state on logout (schoolId becomes null) ────────
+  useEffect(() => {
+    if (schoolId === null && prevSchoolId.current !== null) {
+      prevSchoolId.current = null;
+      dispatch({ type: 'HYDRATE', payload: buildInitial() });
+      setDbLoaded(false);
+    }
+  }, [schoolId]);
+
   // ── Load data from Neon via API when school changes ──────
   useEffect(() => {
     if (!schoolId || schoolId === prevSchoolId.current) return;
