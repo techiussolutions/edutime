@@ -167,6 +167,42 @@ export function generateTimetable(state, requirements) {
   const teacherLoad = {};
   teachers.forEach(t => { teacherLoad[t.id] = 0; });
 
+  // Daily load per teacher: { tid: { dayIdx: count } } — used to spread periods
+  const teacherDayLoad = {};
+  teachers.forEach(t => { teacherDayLoad[t.id] = {}; });
+
+  // Compute total periods needed per teacher across all demands
+  const teacherTotalDemand = {};
+  demands.forEach(d => {
+    d.teacherIds.forEach(tid => { teacherTotalDemand[tid] = (teacherTotalDemand[tid] || 0) + d.remaining; });
+  });
+  // Per-teacher daily limit = ceil(total periods / available days) — soft cap for spread
+  const teacherDailyLimit = {};
+  teachers.forEach(t => {
+    const total = teacherTotalDemand[t.id] || 0;
+    if (total === 0) { teacherDailyLimit[t.id] = 1; return; }
+    const avDays = activeDayKeys.filter(dk =>
+      settings.periodTimings.filter(p => !p.isBreak)
+        .some(p => teacherAvailability?.[t.id]?.[dk]?.[p.period] !== false)
+    );
+    teacherDailyLimit[t.id] = Math.ceil(total / Math.max(1, avDays.length || activeDayKeys.length));
+  });
+
+  // Pick best teacher: prefer those below daily limit → lowest day load → lowest total load
+  const pickBestTeacher = (pool, dIdx) => {
+    const below = pool.filter(tid => (teacherDayLoad[tid]?.[dIdx] || 0) < (teacherDailyLimit[tid] || Infinity));
+    const src = below.length > 0 ? below : pool;
+    return src.reduce((best, tid) => {
+      const db = teacherDayLoad[tid]?.[dIdx] || 0, da = teacherDayLoad[best]?.[dIdx] || 0;
+      if (db !== da) return db < da ? tid : best;
+      return (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best;
+    });
+  };
+  const bumpDayLoad = (tid, dIdx) => {
+    if (!teacherDayLoad[tid]) teacherDayLoad[tid] = {};
+    teacherDayLoad[tid][dIdx] = (teacherDayLoad[tid][dIdx] || 0) + 1;
+  };
+
   // If generating for selected classes only, pre-fill busy maps from existing schedule
   // for non-selected classes so we don't double-book teachers
   if (selectedClassIds) {
@@ -196,6 +232,7 @@ export function generateTimetable(state, requirements) {
       teacherBusy.add(`${slot.teacherId}_${slot.day}_${slot.period}`);
       classBusy.add(`${slot.classId}_${slot.day}_${slot.period}`);
       teacherLoad[slot.teacherId] = (teacherLoad[slot.teacherId] || 0) + 1;
+      bumpDayLoad(slot.teacherId, slot.day);
       // Reduce the matching demand so we don't over-assign this subject
       const demand = demands.find(d => d.classId === slot.classId && d.subjectId === slot.subjectId);
       if (demand) {
@@ -269,9 +306,7 @@ export function generateTimetable(state, requirements) {
         );
         if (!freeTeachers.length) continue;
 
-        const chosenTeacherId = freeTeachers.reduce((best, tid) =>
-          (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
-        );
+        const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
         if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
@@ -286,8 +321,7 @@ export function generateTimetable(state, requirements) {
               teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
             );
             const chosen = freeSibTeachers.length
-              ? freeSibTeachers.reduce((best, tid) =>
-                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              ? pickBestTeacher(freeSibTeachers, dayIdx)
               : null;
             return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
           });
@@ -305,6 +339,7 @@ export function generateTimetable(state, requirements) {
         teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
         classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
         teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        bumpDayLoad(chosenTeacherId, dayIdx);
         demand.remaining--;
         demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
@@ -313,6 +348,7 @@ export function generateTimetable(state, requirements) {
             if (sib.teacherId === chosenTeacherId) continue;
             teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
             teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+            bumpDayLoad(sib.teacherId, dayIdx);
             const sibDemand = demands.find(
               d => d.classId === demand.classId && d.subjectId === sib.subjectId
             );
@@ -351,10 +387,8 @@ export function generateTimetable(state, requirements) {
       );
       if (!freeTeachers.length) continue;
 
-      // Pick lowest-loaded free teacher
-      const chosenTeacherId = freeTeachers.reduce((best, tid) =>
-        (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
-      );
+      // Pick lowest-loaded free teacher, preferring spread across days
+      const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
 
       // Check weekly teacher cap
       const teacher = teachers.find(t => t.id === chosenTeacherId);
@@ -373,9 +407,7 @@ export function generateTimetable(state, requirements) {
             teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
           );
           const chosen = freeSibTeachers.length
-            ? freeSibTeachers.reduce((best, tid) =>
-                (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
-              )
+            ? pickBestTeacher(freeSibTeachers, dayIdx)
             : null;
           return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
         });
@@ -397,6 +429,7 @@ export function generateTimetable(state, requirements) {
       usedTeachersThisSlot.add(chosenTeacherId);
       usedClassesThisSlot.add(demand.classId);
       teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+      bumpDayLoad(chosenTeacherId, dayIdx);
       demand.remaining--;
       demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
@@ -407,6 +440,7 @@ export function generateTimetable(state, requirements) {
           teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
           usedTeachersThisSlot.add(sib.teacherId);
           teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+          bumpDayLoad(sib.teacherId, dayIdx);
           const sibDemand = demands.find(
             d => d.classId === demand.classId && d.subjectId === sib.subjectId
           );
@@ -521,9 +555,7 @@ export function generateTimetable(state, requirements) {
         );
         if (!freeTeachers.length) continue;
 
-        const chosenTeacherId = freeTeachers.reduce((best, tid) =>
-          (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best
-        );
+        const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
         if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
@@ -539,8 +571,7 @@ export function generateTimetable(state, requirements) {
               teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
             );
             const chosen = freeSibTeachers.length
-              ? freeSibTeachers.reduce((best, tid) =>
-                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              ? pickBestTeacher(freeSibTeachers, dayIdx)
               : null;
             return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
           });
@@ -560,6 +591,7 @@ export function generateTimetable(state, requirements) {
         usedTeachersThisSlot.add(chosenTeacherId);
         usedClassesThisSlot.add(demand.classId);
         teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        bumpDayLoad(chosenTeacherId, dayIdx);
         demand.remaining--;
         demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
@@ -569,6 +601,7 @@ export function generateTimetable(state, requirements) {
             teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
             usedTeachersThisSlot.add(sib.teacherId);
             teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+            bumpDayLoad(sib.teacherId, dayIdx);
             const sibDemand = demands.find(
               d => d.classId === demand.classId && d.subjectId === sib.subjectId
             );
