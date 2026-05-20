@@ -23,8 +23,6 @@ export default function SettingsPage() {
 
   const { settings, school } = state;
 
-  const toast = () => { setSaved(true); setTimeout(()=>setSaved(false), 2000); };
-
   // Data backup state
   const [importBackupData,  setImportBackupData]  = useState(null);
   const [importBackupError, setImportBackupError] = useState('');
