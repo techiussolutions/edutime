@@ -10,7 +10,11 @@ export default async function handler(req, res) {
   if (!auth) return unauthorized(res);
 
   const db = sql();
-  const schoolId = req.query.schoolId || auth.schoolId;
+
+  // Super admins may query any school via query param; everyone else is locked to their own school
+  const schoolId = auth.role === 'super_admin'
+    ? (req.query.schoolId || auth.schoolId)
+    : auth.schoolId;
   if (!schoolId) return badRequest(res, 'schoolId required');
 
   // Parallel fetch all tables

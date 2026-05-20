@@ -11,8 +11,14 @@ export default async function handler(req, res) {
   const auth = await verifyAuth(req);
   if (!auth) return unauthorized(res);
 
-  const { action, schoolId, payload } = req.body;
-  if (!action || !schoolId) return badRequest(res, 'action and schoolId required');
+  const { action, schoolId: reqSchoolId, payload } = req.body;
+  if (!action) return badRequest(res, 'action and schoolId required');
+
+  // Super admins may target any school; everyone else is locked to their own school
+  const schoolId = auth.role === 'super_admin'
+    ? (reqSchoolId || auth.schoolId)
+    : auth.schoolId;
+  if (!schoolId) return badRequest(res, 'schoolId required');
 
   const db = sql();
 
