@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     db`SELECT teacher_id, day_key, period, available FROM teacher_availability WHERE school_id = ${schoolId}`,
     db`SELECT id, teacher_id, date, leave_type, reason FROM absences WHERE school_id = ${schoolId} ORDER BY date DESC LIMIT 500`,
     db`SELECT id, date, day, period, schedule_id, absent_teacher_id, substitute_teacher_id, assigned_by FROM substitutions WHERE school_id = ${schoolId} ORDER BY date DESC LIMIT 500`,
-    db`SELECT id, name, description, slots, created_by, created_at FROM timetable_snapshots WHERE school_id = ${schoolId} ORDER BY created_at DESC`,
+    db`SELECT id, name, description, slots, created_by, created_at FROM timetable_snapshots WHERE school_id = ${schoolId} ORDER BY created_at DESC`.catch(() => []),
   ]);
 
   return res.json({
