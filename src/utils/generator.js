@@ -757,7 +757,7 @@ export function getDefaultRequirements(classes, subjects, activeDayCount, classA
  * }]
  */
 export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
-  const { teachers, classes, subjects, classAssignments = [] } = state;
+  const { teachers, classes, subjects, classAssignments = [], schedule = [] } = state;
 
   const targetClasses = selectedClassIds
     ? classes.filter(c => selectedClassIds.includes(c.id))
@@ -767,7 +767,7 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   const subjectData = {};
   subjects.forEach(sub => { subjectData[sub.id] = { totalPeriods: 0, teacherPeriods: {}, teacherClasses: {} }; });
 
-  // Cross-subject total load per teacher
+  // Cross-subject total load per teacher (assignment-based — may be overridden below)
   const teacherTotalPeriods = {};
 
   targetClasses.forEach(cls => {
@@ -791,6 +791,42 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       }
     });
   });
+
+  // ── If the timetable has been generated, override loads with actual unique
+  // (day, period) counts per teacher. This correctly handles concurrent subjects
+  // where the same teacher covers multiple classes in the same slot — counting
+  // it once instead of once-per-class.
+  if (schedule.length > 0) {
+    const teacherSlotSets   = {};  // { tid: Set("day_period") }
+    const teacherSubjSlots  = {};  // { "tid__subjectId": Set("day_period") }
+
+    schedule.forEach(({ teacherId: tid, subjectId, day, period }) => {
+      if (!tid) return;
+      const key = `${day}_${period}`;
+      if (!teacherSlotSets[tid]) teacherSlotSets[tid] = new Set();
+      teacherSlotSets[tid].add(key);
+      if (subjectId) {
+        const sk = `${tid}__${subjectId}`;
+        if (!teacherSubjSlots[sk]) teacherSubjSlots[sk] = new Set();
+        teacherSubjSlots[sk].add(key);
+      }
+    });
+
+    // Override cross-subject totals with schedule-based unique counts
+    Object.entries(teacherSlotSets).forEach(([tid, slots]) => {
+      teacherTotalPeriods[tid] = slots.size;
+    });
+
+    // Override per-subject teacher periods
+    subjects.forEach(sub => {
+      if (!subjectData[sub.id]) return;
+      const sd = subjectData[sub.id];
+      Object.keys(sd.teacherPeriods).forEach(tid => {
+        const slots = teacherSubjSlots[`${tid}__${sub.id}`];
+        if (slots) sd.teacherPeriods[tid] = slots.size;
+      });
+    });
+  }
 
   const avgMaxPeriods = teachers.length > 0
     ? teachers.reduce((s, t) => s + t.maxPeriods, 0) / teachers.length

@@ -75,8 +75,11 @@ export const validateSubjectAssignment = (state, teacherId, classId, subjectId, 
   if (!subject) return { valid: false, error: 'Subject not found' };
   
   // ── 1. Calculate teacher's current period load ────────────────────────────
-  // Count all periods this teacher is already assigned in the schedule
-  const currentPeriods = schedule.filter(s => s.teacherId === teacherId).length;
+  // Count unique (day, period) pairs — concurrent slots (same teacher, same period,
+  // multiple classes) count as ONE teaching slot, not one per class.
+  const currentPeriods = new Set(
+    schedule.filter(s => s.teacherId === teacherId).map(s => `${s.day}_${s.period}`)
+  ).size;
   
   // Get the periods required for this subject in this class from classSubjectMap
   // If not provided, estimate based on subject defaults
@@ -139,8 +142,10 @@ export const canAssignTeacherToSubject = (state, teacherId, classId, subjectId) 
   const teacher = teachers.find(t => t.id === teacherId);
   if (!teacher) return { canAssign: false, message: 'Teacher not found', remainingCapacity: 0 };
   
-  // Count periods already assigned to this teacher
-  const currentPeriods = schedule.filter(s => s.teacherId === teacherId).length;
+  // Count periods already assigned to this teacher (unique time slots)
+  const currentPeriods = new Set(
+    schedule.filter(s => s.teacherId === teacherId).map(s => `${s.day}_${s.period}`)
+  ).size;
   const maxPeriods = teacher.maxPeriods || 30;
   const remainingCapacity = maxPeriods - currentPeriods;
   
@@ -166,7 +171,9 @@ export const getTeacherWorkload = (state, teacherId) => {
   const teacher = teachers.find(t => t.id === teacherId);
   if (!teacher) return null;
   
-  const assignedPeriods = schedule.filter(s => s.teacherId === teacherId).length;
+  const assignedPeriods = new Set(
+    schedule.filter(s => s.teacherId === teacherId).map(s => `${s.day}_${s.period}`)
+  ).size;
   const maxPeriods = teacher.maxPeriods || 30;
   const utilisationPercent = Math.round((assignedPeriods / maxPeriods) * 100);
   
