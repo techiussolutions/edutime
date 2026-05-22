@@ -166,6 +166,9 @@ export function generateTimetable(state, requirements) {
   // Weekly load
   const teacherLoad = {};
   teachers.forEach(t => { teacherLoad[t.id] = 0; });
+  // For concurrent subjects, the same teacher covers multiple classes in ONE slot.
+  // Track counted (teacher, day, period) keys so teacherLoad increments only once per slot.
+  const concurrentLoadCounted = new Set();
 
   // Daily load per teacher: { tid: { dayIdx: count } } — used to spread periods
   const teacherDayLoad = {};
@@ -338,8 +341,13 @@ export function generateTimetable(state, requirements) {
         });
         teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
         classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
-        teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
-        bumpDayLoad(chosenTeacherId, dayIdx);
+        // Concurrent: only count this slot once even if same teacher covers multiple classes
+        const _concKey3a = `${chosenTeacherId}_${dayIdx}_${period}`;
+        if (!demand.concurrent || !concurrentLoadCounted.has(_concKey3a)) {
+          teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+          bumpDayLoad(chosenTeacherId, dayIdx);
+          if (demand.concurrent) concurrentLoadCounted.add(_concKey3a);
+        }
         demand.remaining--;
         demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
@@ -428,8 +436,13 @@ export function generateTimetable(state, requirements) {
       classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
       usedTeachersThisSlot.add(chosenTeacherId);
       usedClassesThisSlot.add(demand.classId);
-      teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
-      bumpDayLoad(chosenTeacherId, dayIdx);
+      // Concurrent: only count this slot once even if same teacher covers multiple classes
+      const _concKey = `${chosenTeacherId}_${dayIdx}_${period}`;
+      if (!demand.concurrent || !concurrentLoadCounted.has(_concKey)) {
+        teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        bumpDayLoad(chosenTeacherId, dayIdx);
+        if (demand.concurrent) concurrentLoadCounted.add(_concKey);
+      }
       demand.remaining--;
       demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
 
