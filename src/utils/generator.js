@@ -770,33 +770,34 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   // Cross-subject total load per teacher (assignment-based — may be overridden below)
   const teacherTotalPeriods = {};
 
-  // Subjects in any OR group are taught concurrently across divisions —
-  // count each (teacher, subject) pair once, not once per class.
+  // Both OR-group subjects and concurrent subjects are taught in a shared slot across
+  // divisions — count each (teacher, subject) pair once using the MAX configured value.
   const allOrGroupSubjectIds = new Set(
     Object.values(state.classOrGroups || {}).flatMap(groups => groups.flatMap(g => g.subjectIds))
   );
+  const concurrentSubjectIds = new Set(subjects.filter(s => s.concurrent).map(s => s.id));
+  const syncedSubjectIds = new Set([...allOrGroupSubjectIds, ...concurrentSubjectIds]);
 
-  // Pre-pass: find the MAX configured periodsPerWeek per (teacher, OR-group-subject)
-  // across all divisions, so the load always reflects the correct config value
-  // regardless of which division we happen to iterate first.
-  const orGroupMaxPeriods = {}; // "tid__subjectId" -> max share
-  if (allOrGroupSubjectIds.size > 0) {
+  // Pre-pass: find the MAX configured periodsPerWeek per (teacher, synced-subject)
+  // across all divisions so iteration order never affects the result.
+  const syncedMaxPeriods = {}; // "tid__subjectId" -> max share
+  if (syncedSubjectIds.size > 0) {
     targetClasses.forEach(cls => {
       (classSubjectMap[cls.id] || []).forEach(req => {
-        if (!allOrGroupSubjectIds.has(req.subjectId) || req.periodsPerWeek <= 0) return;
+        if (!syncedSubjectIds.has(req.subjectId) || req.periodsPerWeek <= 0) return;
         const asgn = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
         if (!asgn) return;
         const tids = asgn.teacherIds?.length ? asgn.teacherIds : (asgn.teacherId ? [asgn.teacherId] : []);
         tids.forEach(tid => {
           const key = `${tid}__${req.subjectId}`;
           const share = req.periodsPerWeek / tids.length;
-          orGroupMaxPeriods[key] = Math.max(orGroupMaxPeriods[key] || 0, share);
+          syncedMaxPeriods[key] = Math.max(syncedMaxPeriods[key] || 0, share);
         });
       });
     });
   }
 
-  const orGroupTeacherSubjectCounted = new Set(); // "tid__subjectId"
+  const syncedTeacherSubjectCounted = new Set(); // "tid__subjectId"
 
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
@@ -809,19 +810,19 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       const assignment = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
       if (assignment) {
         const tids = assignment.teacherIds?.length ? assignment.teacherIds : (assignment.teacherId ? [assignment.teacherId] : []);
-        const isOrGroup = allOrGroupSubjectIds.has(req.subjectId);
+        const isSynced = syncedSubjectIds.has(req.subjectId);
         tids.forEach(tid => {
           const share = req.periodsPerWeek / tids.length;
-          // For OR group subjects, each teacher only physically occupies one slot
-          // regardless of how many divisions they teach — count once per (teacher, subject)
+          // Synced subjects (concurrent or OR group): each teacher physically occupies one
+          // shared slot regardless of how many divisions — count once per (teacher, subject)
           // using the MAX configured value across all divisions.
-          if (!isOrGroup || !orGroupTeacherSubjectCounted.has(`${tid}__${req.subjectId}`)) {
-            const periodsToAdd = isOrGroup
-              ? (orGroupMaxPeriods[`${tid}__${req.subjectId}`] || share)
+          if (!isSynced || !syncedTeacherSubjectCounted.has(`${tid}__${req.subjectId}`)) {
+            const periodsToAdd = isSynced
+              ? (syncedMaxPeriods[`${tid}__${req.subjectId}`] || share)
               : share;
             sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + periodsToAdd;
             teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + periodsToAdd;
-            if (isOrGroup) orGroupTeacherSubjectCounted.add(`${tid}__${req.subjectId}`);
+            if (isSynced) syncedTeacherSubjectCounted.add(`${tid}__${req.subjectId}`);
           }
           if (!sd.teacherClasses[tid]) sd.teacherClasses[tid] = [];
           if (!sd.teacherClasses[tid].includes(cls.name)) sd.teacherClasses[tid].push(cls.name);
