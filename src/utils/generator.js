@@ -909,10 +909,30 @@ export function mergeNewSubjects(map, clsList, assignments) {
   const merged = {};
   clsList.forEach(cls => {
     const existing = map[cls.id] || [];
-    // Build a set of "subjectId__teacherId" keys already present
-    const existingKeys = new Set(existing.map(r => r.teacherId ? `${r.subjectId}__${r.teacherId}` : r.subjectId));
-
     const clsAssignments = assignments.filter(a => a.classId === cls.id && a.subjectId);
+
+    // Set of subjectIds that still have valid assignments for this class
+    const assignedSubjectIds = new Set(clsAssignments.map(a => a.subjectId));
+
+    // Set of subjectIds that are now configured as multi-teacher
+    const multiTeacherSubjectIds = new Set(
+      clsAssignments
+        .filter(a => (a.teacherIds?.length ?? 0) > 1)
+        .map(a => a.subjectId)
+    );
+
+    // Clean existing entries:
+    //   - drop orphaned subjects (no longer assigned to this class)
+    //   - drop old single/no-teacher entries for subjects now using multi-teacher
+    const filteredExisting = existing.filter(r => {
+      if (!assignedSubjectIds.has(r.subjectId)) return false;          // orphaned
+      if (multiTeacherSubjectIds.has(r.subjectId) && !r.teacherId) return false; // stale
+      return true;
+    });
+
+    // Build a set of "subjectId__teacherId" keys already present
+    const existingKeys = new Set(filteredExisting.map(r => r.teacherId ? `${r.subjectId}__${r.teacherId}` : r.subjectId));
+
     const newEntries = [];
     clsAssignments.forEach(a => {
       const teacherIds = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
@@ -929,7 +949,7 @@ export function mergeNewSubjects(map, clsList, assignments) {
         }
       }
     });
-    merged[cls.id] = newEntries.length > 0 ? [...existing, ...newEntries] : existing;
+    merged[cls.id] = [...filteredExisting, ...newEntries];
   });
   return merged;
 }

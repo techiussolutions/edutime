@@ -434,6 +434,7 @@ export default function WizardPage() {
                         Object.values(grouped).forEach(group => {
                           if (renderedSubjectIds.has(group[0].subjectId)) return;
                           const sub = subjects.find(s => s.id === group[0].subjectId);
+                          if (!sub) return; // orphaned entry — subject deleted, skip row
                           const isMulti = group.length > 1;
                           group.forEach((req, idx) => {
                             const teacher = req.teacherId ? teachers.find(t => t.id === req.teacherId) : null;
