@@ -214,13 +214,22 @@ export default function WizardPage() {
     });
 
     // Check teacher availability coverage: total available slots >= total required periods/week
+    // For concurrent subjects the same teacher covers all assigned classes simultaneously,
+    // so periodsPerWeek is counted ONCE per (teacher, subject) pair, not per class.
     const teacherTotalRequired = {};
+    const teacherSubjectCounted = new Set(); // "tid__subjectId" already counted (for concurrent)
     targetClasses.forEach(cls => {
       (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
         const asgn = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
         if (!asgn) return;
+        const isConcurrent = !!(subjects.find(s => s.id === req.subjectId)?.concurrent);
         const tids = asgn.teacherIds?.length ? asgn.teacherIds : (asgn.teacherId ? [asgn.teacherId] : []);
         tids.forEach(tid => {
+          if (isConcurrent) {
+            const sk = `${tid}__${req.subjectId}`;
+            if (teacherSubjectCounted.has(sk)) return; // count only once for concurrent
+            teacherSubjectCounted.add(sk);
+          }
           teacherTotalRequired[tid] = (teacherTotalRequired[tid] || 0) + req.periodsPerWeek;
         });
       });
