@@ -84,6 +84,7 @@ input, select, textarea { font-family: inherit; border: none; outline: none; }
 img { display: block; max-width: 100%; }
 
 /* ─── ANIMATIONS ─────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeUp   { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
 @keyframes slideInL { from { opacity:0; transform:translateX(-16px); } to { opacity:1; transform:none; } }

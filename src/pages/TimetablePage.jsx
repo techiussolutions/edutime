@@ -3,6 +3,7 @@ import { useApp } from '../store/AppStore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { checkConflict } from '../utils/engine';
+import { generateTimetable } from '../utils/generator';
 import { CheckCircle2, AlertCircle, Wand2, Lock, Unlock, X, User, Printer, Trash2, BookmarkPlus, History, RotateCcw } from 'lucide-react';
 
 const DAY_NAMES = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday' };
@@ -33,6 +34,7 @@ export default function TimetablePage() {
   const [snapDesc,          setSnapDesc]          = useState('');
   const [showHistoryModal,  setShowHistoryModal]  = useState(false);
   const [restoringId,       setRestoringId]       = useState(null);
+  const [regenerating,      setRegenerating]      = useState(false);
 
   // Sort classes numerically by grade, then section alphabetically
   const sortedClasses = useMemo(() => {
@@ -78,6 +80,27 @@ export default function TimetablePage() {
   useEffect(() => { if (selectedTeacher) localStorage.setItem('tt_selected_teacher', selectedTeacher); }, [selectedTeacher]);
 
   const activeDays = Object.entries(settings.workingDays).filter(([,v])=>v).map(([k])=>k).sort((a,b)=>DAY_IDX[a]-DAY_IDX[b]);
+
+  // ── Class regenerate ────────────────────────────────────────────────────
+  const regenClass = async () => {
+    if (!selectedClass || regenerating) return;
+    setRegenerating(true);
+    try {
+      await new Promise(r => setTimeout(r, 0));
+      const classSubjectMap = state.periodsConfig || {};
+      const result = generateTimetable(state, {
+        classSubjectMap,
+        selectedClassIds: [selectedClass],
+      });
+      // Keep all other classes; generator already re-includes locked slots for this class
+      const existingOther = schedule.filter(s => s.classId !== selectedClass);
+      dispatch({ type: 'BULK_SET_SCHEDULE', payload: [...existingOther, ...result.schedule] });
+    } catch (err) {
+      console.error('Regenerate class error:', err);
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   // ── Print helpers ──────────────────────────────────────────────────────
   const getPeriodsForClass = (classId) => {
@@ -349,6 +372,18 @@ export default function TimetablePage() {
           
           <div style={{ flex:1 }}/>
           
+          {viewMode==='class' && canEdit && (
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ gap: '.25rem' }}
+              onClick={regenClass}
+              disabled={regenerating}
+              title="Regenerate timetable for this class only (locked slots are preserved)"
+            >
+              <RotateCcw size={13} style={regenerating ? { animation: 'spin 1s linear infinite' } : {}}/>
+              {regenerating ? 'Generating…' : 'Regenerate Class'}
+            </button>
+          )}
           {viewMode==='class' && canEdit && schedule.some(s => s.classId===selectedClass && !lockedSlots.includes(s.id)) && (
             <button className="btn btn-outline btn-sm" style={{ color:'var(--clr-red)', borderColor:'var(--clr-red)', gap: '.25rem' }}
               onClick={() => setConfirmClear(selectedClass)} title="Clear this class's unlocked slots">
