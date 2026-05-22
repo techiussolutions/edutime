@@ -696,6 +696,76 @@ export function generateTimetable(state, requirements) {
     }
   }
 
+  // ── Step 3c: Cleanup pass — exhaustive placement of still-remaining demands ─
+  // The round-robin pass uses a soft day-spread budget and picks a maximal
+  // independent set per slot, which can leave valid slots unfilled.
+  // This pass ignores the day-budget and processes each remaining demand against
+  // every slot so that only genuine hard conflicts (teacher unavailable / at cap /
+  // class or teacher already busy / blocked period) prevent assignment.
+  for (const demand of demands.filter(d => d.remaining > 0)) {
+    for (const { dayKey, dayIdx, period } of slots) {
+      if (demand.remaining <= 0) break;
+      if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
+      if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+
+      const freeTeachers = demand.teacherIds.filter(tid =>
+        (demand.concurrent || !teacherBusy.has(`${tid}_${dayIdx}_${period}`)) &&
+        teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+      );
+      if (!freeTeachers.length) continue;
+
+      const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
+      const teacher = teachers.find(t => t.id === chosenTeacherId);
+      if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+
+      // OR group: all siblings must also have a free teacher for this slot
+      let alternatives = null;
+      if (demand.orGroup) {
+        const key = `${demand.classId}__${demand.orGroup}`;
+        const siblings = orGroupIndex[key] || [];
+        const allSiblingAlts = siblings.map(sib => {
+          const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+            !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+            teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+          );
+          const chosen = freeSibTeachers.length ? pickBestTeacher(freeSibTeachers, dayIdx) : null;
+          return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+        });
+        if (!allSiblingAlts.every(s => s.free)) continue;
+        alternatives = allSiblingAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId }));
+      }
+
+      // ✅ Assign
+      schedule.push({
+        id: `sch_${demand.classId}_${dayIdx}_${period}`,
+        classId: demand.classId, day: dayIdx, period,
+        teacherId: chosenTeacherId, subjectId: demand.subjectId,
+        alternatives,
+      });
+      teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+      classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
+      const _cKey = `${chosenTeacherId}_${dayIdx}_${period}`;
+      if (!demand.concurrent || !concurrentLoadCounted.has(_cKey)) {
+        teacherLoad[chosenTeacherId] = (teacherLoad[chosenTeacherId] || 0) + 1;
+        bumpDayLoad(chosenTeacherId, dayIdx);
+        if (demand.concurrent) concurrentLoadCounted.add(_cKey);
+      }
+      demand.remaining--;
+      demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+
+      if (demand.orGroup && alternatives) {
+        for (const sib of alternatives) {
+          if (sib.teacherId === chosenTeacherId) continue;
+          teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+          teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
+          bumpDayLoad(sib.teacherId, dayIdx);
+          const sibDemand = demands.find(d => d.classId === demand.classId && d.subjectId === sib.subjectId);
+          if (sibDemand) sibDemand.remaining--;
+        }
+      }
+    }
+  }
+
   // ── Step 4: Warnings ──────────────────────────────────────────────────────
   unassigned.forEach(msg => warnings.push(msg));
 
