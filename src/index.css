@@ -416,11 +416,11 @@ tbody tr:hover { background: var(--bg-muted); }
   background: rgba(15,23,42,.55);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;       /* let tall modals scroll within the overlay */
   justify-content: center;
   z-index: 9999;
   animation: fadeIn .15s both;
-  padding: 2rem 1rem;
+  padding: clamp(.75rem, 4vw, 2rem);
   overflow-y: auto;
   isolation: isolate;
 }
@@ -428,17 +428,20 @@ tbody tr:hover { background: var(--bg-muted); }
   background: var(--bg-card);
   border-radius: var(--r-2xl);
   box-shadow: var(--sh-xl);
-  width: 100%; max-width: min(720px, 92vw);
-  /* Grow with content but never taller than the viewport minus overlay padding */
-  max-height: calc(100vh - 4rem);
+  width: 100%;
+  max-width: min(720px, calc(100vw - 2 * clamp(.75rem, 4vw, 2rem)));
+  /* max-height keeps the body scrollable; margin:auto centres vertically when there’s room */
+  max-height: calc(100dvh - 2 * clamp(.75rem, 4vw, 2rem));
+  margin: auto;
   animation: fadeUp .2s both;
   display: flex;
   flex-direction: column;
-  /* Never produce a horizontal scrollbar */
-  overflow-x: hidden;
+  overflow: hidden;              /* clip at rounded corners; body scrolls inside */
   box-sizing: border-box;
+  /* Prevent any child from blowing out the width */
+  min-width: 0;
 }
-.modal-lg { max-width: min(960px, 92vw); }
+.modal-lg { max-width: min(960px, calc(100vw - 2 * clamp(.75rem, 4vw, 2rem))); }
 .modal-header {
   display: flex; align-items: flex-start; justify-content: space-between;
   padding: 1.25rem 1.5rem;
@@ -447,22 +450,32 @@ tbody tr:hover { background: var(--bg-muted); }
   border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   flex-shrink: 0;
   gap: 1rem;
-  /* Prevent header content from pushing width */
   min-width: 0;
   overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
+.modal-header h2, .modal-header h3 { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .modal-body {
   padding: 1.5rem;
-  /* Scroll vertically when content is too tall, never horizontally */
   overflow-y: auto;
   overflow-x: hidden;
-  /* Let the body shrink to give room to header/footer */
   flex: 1 1 auto;
   min-height: 0;
-  /* Prevent inner content from blowing out the width */
   min-width: 0;
   box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
+/* Every direct child of the body must stay within its column */
+.modal-body > * { max-width: 100%; min-width: 0; box-sizing: border-box; }
+/* Tables that are wider than the modal get their own scroll lane */
+.modal-body table { width: 100%; }
+.modal-body .table-wrap { overflow-x: auto; max-width: 100%; }
+/* Text inputs / selects expand to fill available width */
+.modal-body input:not([type=checkbox]):not([type=radio]),
+.modal-body select,
+.modal-body textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
 .modal-footer {
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border);
@@ -470,7 +483,6 @@ tbody tr:hover { background: var(--bg-muted); }
   background: var(--bg-card);
   border-radius: 0 0 var(--r-2xl) var(--r-2xl);
   flex-shrink: 0;
-  /* Wrap buttons on narrow modals instead of overflowing */
   flex-wrap: wrap;
 }
 
@@ -701,12 +713,13 @@ tbody tr:hover { background: var(--bg-muted); }
     max-height: 100dvh;
     min-height: 100dvh;
     box-shadow: none;
-    overflow-x: hidden;
+    overflow: hidden;
   }
   .modal-header {
     border-radius: 0;
     min-width: 0;
     overflow: hidden;
+    word-break: break-word;
   }
   .modal-body {
     overflow-y: auto;
@@ -714,7 +727,9 @@ tbody tr:hover { background: var(--bg-muted); }
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
+    word-break: break-word;
   }
+  .modal-body > * { max-width: 100%; min-width: 0; }
   .modal-footer {
     border-radius: 0;
     flex-wrap: wrap;

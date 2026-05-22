@@ -766,6 +766,88 @@ export function generateTimetable(state, requirements) {
     }
   }
 
+  // ── Step 3d: Slot filler — fill remaining empty class slots ──────────────
+  // After all configured demands are placed, any class slot still empty is
+  // filled using "flexible" subjects: teacher has NO availability restrictions,
+  // subject is NOT concurrent and NOT in an OR group.  These can repeat beyond
+  // their configured periodsPerWeek because the slot would otherwise be wasted.
+  // Preference goes to the least-scheduled subject in that class (variety).
+  {
+    // Identify fully-flexible teacher: no false entries in teacherAvailability
+    const isFlexibleTeacher = (tid) => {
+      const avMap = teacherAvailability?.[tid];
+      if (!avMap) return true;
+      return !activeDayKeys.some(dk =>
+        settings.periodTimings.filter(p => !p.isBreak)
+          .some(p => avMap[dk]?.[p.period] === false)
+      );
+    };
+
+    // Build per-class list of flexible assignments (subjectId + eligible teacherIds)
+    const flexPool = {};
+    targetClasses.forEach(cls => {
+      const entries = classAssignments
+        .filter(a => a.classId === cls.id)
+        .flatMap(a => {
+          const sub = subjects.find(s => s.id === a.subjectId);
+          if (!sub || sub.concurrent) return [];
+          if (subjectOrGroupLabel[`${cls.id}__${a.subjectId}`]) return [];
+          const tids = (a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []))
+            .filter(isFlexibleTeacher);
+          if (!tids.length) return [];
+          return [{ subjectId: a.subjectId, teacherIds: tids }];
+        });
+      if (entries.length) flexPool[cls.id] = entries;
+    });
+
+    // Track how many times each (class, subject) appears in the schedule so far
+    const slotCount = {};
+    schedule.forEach(s => {
+      const k = `${s.classId}__${s.subjectId}`;
+      slotCount[k] = (slotCount[k] || 0) + 1;
+    });
+
+    for (const { dayKey, dayIdx, period } of slots) {
+      for (const cls of targetClasses) {
+        if (classBusy.has(`${cls.id}_${dayIdx}_${period}`)) continue;
+        if ((classPeriodSettings[cls.id]?.blockedPeriods || []).includes(period)) continue;
+        const pool = flexPool[cls.id];
+        if (!pool?.length) continue;
+
+        // Among flexible assignments, find those with a free teacher under cap
+        const candidates = pool.flatMap(fa => {
+          const freeTids = fa.teacherIds.filter(tid =>
+            !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+            teacherAvailability?.[tid]?.[dayKey]?.[period] !== false &&
+            (teacherLoad[tid] || 0) < (teachers.find(t => t.id === tid)?.maxPeriods ?? Infinity)
+          );
+          return freeTids.length ? [{ subjectId: fa.subjectId, freeTids }] : [];
+        });
+        if (!candidates.length) continue;
+
+        // Pick subject with lowest schedule count for this class (variety)
+        candidates.sort((a, b) =>
+          (slotCount[`${cls.id}__${a.subjectId}`] || 0) -
+          (slotCount[`${cls.id}__${b.subjectId}`] || 0)
+        );
+        const chosen = candidates[0];
+        const chosenTid = pickBestTeacher(chosen.freeTids, dayIdx);
+
+        schedule.push({
+          id: `sch_${cls.id}_${dayIdx}_${period}`,
+          classId: cls.id, day: dayIdx, period,
+          teacherId: chosenTid, subjectId: chosen.subjectId,
+        });
+        teacherBusy.add(`${chosenTid}_${dayIdx}_${period}`);
+        classBusy.add(`${cls.id}_${dayIdx}_${period}`);
+        teacherLoad[chosenTid] = (teacherLoad[chosenTid] || 0) + 1;
+        bumpDayLoad(chosenTid, dayIdx);
+        const k = `${cls.id}__${chosen.subjectId}`;
+        slotCount[k] = (slotCount[k] || 0) + 1;
+      }
+    }
+  }
+
   // ── Step 4: Warnings ──────────────────────────────────────────────────────
   unassigned.forEach(msg => warnings.push(msg));
 
