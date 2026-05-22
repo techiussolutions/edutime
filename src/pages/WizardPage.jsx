@@ -214,20 +214,24 @@ export default function WizardPage() {
     });
 
     // Check teacher availability coverage: total available slots >= total required periods/week
-    // For concurrent subjects the same teacher covers all assigned classes simultaneously,
-    // so periodsPerWeek is counted ONCE per (teacher, subject) pair, not per class.
+    // Concurrent subjects and OR group subjects are taught simultaneously across classes —
+    // count each (teacher, subject) pair ONCE, not once per class.
+    const allOrGroupSubjectIds = new Set(
+      Object.values(state.classOrGroups || {}).flatMap(groups => groups.flatMap(g => g.subjectIds))
+    );
     const teacherTotalRequired = {};
-    const teacherSubjectCounted = new Set(); // "tid__subjectId" already counted (for concurrent)
+    const teacherSubjectCounted = new Set(); // "tid__subjectId" already counted
     targetClasses.forEach(cls => {
       (classSubjectMap[cls.id] || []).filter(r => r.periodsPerWeek > 0).forEach(req => {
         const asgn = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
         if (!asgn) return;
         const isConcurrent = !!(subjects.find(s => s.id === req.subjectId)?.concurrent);
+        const isOrGroup = allOrGroupSubjectIds.has(req.subjectId);
         const tids = asgn.teacherIds?.length ? asgn.teacherIds : (asgn.teacherId ? [asgn.teacherId] : []);
         tids.forEach(tid => {
-          if (isConcurrent) {
+          if (isConcurrent || isOrGroup) {
             const sk = `${tid}__${req.subjectId}`;
-            if (teacherSubjectCounted.has(sk)) return; // count only once for concurrent
+            if (teacherSubjectCounted.has(sk)) return; // count only once
             teacherSubjectCounted.add(sk);
           }
           teacherTotalRequired[tid] = (teacherTotalRequired[tid] || 0) + req.periodsPerWeek;
@@ -248,7 +252,7 @@ export default function WizardPage() {
     });
 
     return issues;
-  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount, genMode, selectedClassIds, teacherAvailability, activeDayKeys, nonBreakPeriods, teachers]);
+  }, [classSubjectMap, classes, classAssignments, subjects, classPeriodSettings, activeDayCount, genMode, selectedClassIds, teacherAvailability, activeDayKeys, nonBreakPeriods, teachers, state.classOrGroups]);
 
 
   const staffingAnalysis = useMemo(

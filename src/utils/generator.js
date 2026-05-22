@@ -770,6 +770,13 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   // Cross-subject total load per teacher (assignment-based — may be overridden below)
   const teacherTotalPeriods = {};
 
+  // Subjects in any OR group are taught concurrently across divisions —
+  // count each (teacher, subject) pair once, not once per class.
+  const allOrGroupSubjectIds = new Set(
+    Object.values(state.classOrGroups || {}).flatMap(groups => groups.flatMap(g => g.subjectIds))
+  );
+  const orGroupTeacherSubjectCounted = new Set(); // "tid__subjectId"
+
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
@@ -781,10 +788,16 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
       const assignment = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
       if (assignment) {
         const tids = assignment.teacherIds?.length ? assignment.teacherIds : (assignment.teacherId ? [assignment.teacherId] : []);
+        const isOrGroup = allOrGroupSubjectIds.has(req.subjectId);
         tids.forEach(tid => {
           const share = req.periodsPerWeek / tids.length;
-          sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + share;
-          teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + share;
+          // For OR group subjects, each teacher only physically occupies one slot
+          // regardless of how many divisions they teach — count once per (teacher, subject).
+          if (!isOrGroup || !orGroupTeacherSubjectCounted.has(`${tid}__${req.subjectId}`)) {
+            sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + share;
+            teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + share;
+            if (isOrGroup) orGroupTeacherSubjectCounted.add(`${tid}__${req.subjectId}`);
+          }
           if (!sd.teacherClasses[tid]) sd.teacherClasses[tid] = [];
           if (!sd.teacherClasses[tid].includes(cls.name)) sd.teacherClasses[tid].push(cls.name);
         });
