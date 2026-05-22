@@ -105,10 +105,11 @@ export default async function handler(req, res) {
       case 'UPDATE_SUBJECT': {
         const s = payload;
         await db`
-          INSERT INTO subjects (id, school_id, name, code, applicable_classes)
-          VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses || []})
+          INSERT INTO subjects (id, school_id, name, code, applicable_classes, concurrent)
+          VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses || []}, ${s.concurrent || false})
           ON CONFLICT (id, school_id) DO UPDATE SET
-            name = EXCLUDED.name, code = EXCLUDED.code, applicable_classes = EXCLUDED.applicable_classes
+            name = EXCLUDED.name, code = EXCLUDED.code, applicable_classes = EXCLUDED.applicable_classes,
+            concurrent = EXCLUDED.concurrent
         `;
         break;
       }
@@ -334,10 +335,11 @@ export default async function handler(req, res) {
         // 4 – Subjects
         for (const s of (bk.subjects || [])) {
           await db`
-            INSERT INTO subjects (id, school_id, name, code, applicable_classes)
-            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses||[]})
+            INSERT INTO subjects (id, school_id, name, code, applicable_classes, concurrent)
+            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicableClasses||[]}, ${s.concurrent||false})
             ON CONFLICT (id, school_id) DO UPDATE SET
-              name=EXCLUDED.name, code=EXCLUDED.code, applicable_classes=EXCLUDED.applicable_classes
+              name=EXCLUDED.name, code=EXCLUDED.code, applicable_classes=EXCLUDED.applicable_classes,
+              concurrent=EXCLUDED.concurrent
           `;
         }
 
@@ -444,8 +446,8 @@ export default async function handler(req, res) {
         }
         for (const s of (subjects || [])) {
           await db`
-            INSERT INTO subjects (id, school_id, name, code, applicable_classes)
-            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicable_classes || []})
+            INSERT INTO subjects (id, school_id, name, code, applicable_classes, concurrent)
+            VALUES (${s.id}, ${schoolId}, ${s.name}, ${s.code}, ${s.applicable_classes || []}, ${s.concurrent || false})
             ON CONFLICT (id, school_id) DO NOTHING
           `;
         }
