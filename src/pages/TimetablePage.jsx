@@ -234,8 +234,15 @@ export default function TimetablePage() {
       const alreadyHere = currentSlot?.subjectId === a.subjectId;
       const projectedCount = alreadyHere ? weekCount : weekCount + 1;
       const atLimit = configuredLimit !== null && projectedCount > configuredLimit;
+      // How many other classes share this concurrent subject+teacher (for badge display)
+      const concurrentClassCount = isConcurrent
+        ? classAssignments.filter(ca =>
+            ca.subjectId === a.subjectId && ca.classId !== classId &&
+            (ca.teacherIds?.includes(a.teacherId) || ca.teacherId === a.teacherId)
+          ).length
+        : 0;
 
-      return { sub, teacher, subjectId: a.subjectId, teacherId: a.teacherId, busy, unavailable, weekCount, configuredLimit, atLimit };
+      return { sub, teacher, subjectId: a.subjectId, teacherId: a.teacherId, busy, unavailable, weekCount, configuredLimit, atLimit, isConcurrent, concurrentClassCount };
     }).filter(o => o.sub && o.teacher);
   }, [editing, classAssignments, subjects, teachers, schedule, state]);
 
@@ -280,7 +287,8 @@ export default function TimetablePage() {
       const atLimitMember = members.find(m => m.atLimit);
       const isCurrentlyAssigned = currentSlot?.alternatives?.length > 1 &&
         members.every(m => currentSlot.alternatives.some(a => a.subjectId === m.subjectId));
-      return { label: grp.label, members, anyBusy, atLimitMember, isCurrentlyAssigned };
+      const syncClassCount = grp.syncClassIds?.length || 0;
+      return { label: grp.label, members, anyBusy, atLimitMember, isCurrentlyAssigned, syncClassCount };
     }).filter(Boolean);
   }, [editing, state.classOrGroups, classAssignments, subjects, teachers, schedule, teacherAvailability]);
 
@@ -297,6 +305,15 @@ export default function TimetablePage() {
     const { classId, dayKey, period } = editing;
     const dIdx = DAY_IDX[dayKey];
     dispatch({ type:'ASSIGN_SLOT', payload:{ classId, day:dIdx, period, teacherId:opt.teacherId, subjectId:opt.subjectId } });
+    // Concurrent subject: auto-assign same slot to all other classes that share this subject+teacher
+    if (opt.isConcurrent) {
+      classAssignments
+        .filter(a => a.subjectId === opt.subjectId && a.classId !== classId &&
+          (a.teacherIds?.includes(opt.teacherId) || a.teacherId === opt.teacherId))
+        .forEach(a => {
+          dispatch({ type:'ASSIGN_SLOT', payload:{ classId: a.classId, day:dIdx, period, teacherId: opt.teacherId, subjectId: opt.subjectId } });
+        });
+    }
     setEditing(null); setConflict(null);
   };
 
@@ -310,6 +327,23 @@ export default function TimetablePage() {
       teacherId: primary.teacherId, subjectId: primary.subjectId,
       alternatives: grp.members.map(m => ({ subjectId: m.subjectId, teacherId: m.teacherId })),
     }});
+    // Cross-class OR group sync: propagate same OR group slot to all synced classes
+    const srcGrpDef = (state.classOrGroups?.[classId] || []).find(g => g.label === grp.label);
+    (srcGrpDef?.syncClassIds || []).forEach(syncCid => {
+      const syncGrpDef = (state.classOrGroups?.[syncCid] || []).find(g => g.label === grp.label);
+      if (!syncGrpDef) return;
+      const syncMembers = syncGrpDef.subjectIds.map(sid => {
+        const a = classAssignments.find(a2 => a2.classId === syncCid && a2.subjectId === sid);
+        const tid = a?.teacherIds?.[0] || a?.teacherId;
+        return tid ? { subjectId: sid, teacherId: tid } : null;
+      }).filter(Boolean);
+      if (syncMembers.length < 2) return;
+      dispatch({ type:'ASSIGN_SLOT', payload:{
+        classId: syncCid, day:dIdx, period,
+        teacherId: syncMembers[0].teacherId, subjectId: syncMembers[0].subjectId,
+        alternatives: syncMembers,
+      }});
+    });
     setEditing(null); setConflict(null);
   };
 
@@ -762,6 +796,11 @@ export default function TimetablePage() {
                             {grp.isCurrentlyAssigned && !grp.anyBusy && (
                               <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
                             )}
+                            {grp.syncClassCount > 0 && !grp.anyBusy && (
+                              <div style={{ fontSize:'.65rem', color:'#7c3aed', marginTop:'.25rem', fontWeight:600 }}>
+                                ⟶ also applies to {grp.syncClassCount} synced class{grp.syncClassCount > 1 ? 'es' : ''}
+                              </div>
+                            )}
                           </button>
                         );
                       })}
@@ -823,6 +862,11 @@ export default function TimetablePage() {
                             </div>
                             {isCurrentlyAssigned && !opt.busy && (
                               <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
+                            )}
+                            {opt.isConcurrent && opt.concurrentClassCount > 0 && (
+                              <div style={{ fontSize:'.65rem', color:'#0369a1', marginTop:'.2rem', fontWeight:600 }}>
+                                ⟶ also assigns {opt.concurrentClassCount} other class{opt.concurrentClassCount > 1 ? 'es' : ''}
+                              </div>
                             )}
                           </button>
                         );
