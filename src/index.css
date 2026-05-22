@@ -428,7 +428,7 @@ tbody tr:hover { background: var(--bg-muted); }
   background: var(--bg-card);
   border-radius: var(--r-2xl);
   box-shadow: var(--sh-xl);
-  width: 100%; max-width: 560px;
+  width: 100%; max-width: min(720px, 92vw);
   /* Grow with content but never taller than the viewport minus overlay padding */
   max-height: calc(100vh - 4rem);
   animation: fadeUp .2s both;
@@ -438,7 +438,7 @@ tbody tr:hover { background: var(--bg-muted); }
   overflow-x: hidden;
   box-sizing: border-box;
 }
-.modal-lg { max-width: 720px; }
+.modal-lg { max-width: min(960px, 92vw); }
 .modal-header {
   display: flex; align-items: flex-start; justify-content: space-between;
   padding: 1.25rem 1.5rem;
