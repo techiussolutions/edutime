@@ -311,7 +311,7 @@ export function generateTimetable(state, requirements) {
 
         const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
-        if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+        if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
         // Handle non-synced OR group siblings
         let alternatives = null;
@@ -400,7 +400,7 @@ export function generateTimetable(state, requirements) {
 
       // Check weekly teacher cap
       const teacher = teachers.find(t => t.id === chosenTeacherId);
-      if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+      if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
       // ── Resolve OR-group siblings ───────────────────────────────────────
       let alternatives = null;
@@ -510,7 +510,7 @@ export function generateTimetable(state, requirements) {
           // Use the leader's subject/teacher from syncAlts
           const leaderAlt = syncAlts.find(s => s.subjectId === syncLeaderDemand.subjectId) || syncAlts[0];
           const leaderTeacherObj = teachers.find(t => t.id === leaderAlt.teacherId);
-          if (leaderTeacherObj && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
+          if (leaderTeacherObj && leaderTeacherObj.maxPeriods > 0 && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
 
           // ✅ Assign the synced class slot
           schedule.push({
@@ -570,7 +570,7 @@ export function generateTimetable(state, requirements) {
 
         const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
-        if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+        if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
         // Resolve OR-group siblings
         let alternatives = null;
@@ -665,7 +665,7 @@ export function generateTimetable(state, requirements) {
 
             const leaderAlt = syncAlts.find(s => s.subjectId === syncLeaderDemand.subjectId) || syncAlts[0];
             const leaderTeacherObj = teachers.find(t => t.id === leaderAlt.teacherId);
-            if (leaderTeacherObj && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
+            if (leaderTeacherObj && leaderTeacherObj.maxPeriods > 0 && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
 
             schedule.push({
               id: `sch_${syncCid}_${dayIdx}_${period}`,
@@ -716,7 +716,7 @@ export function generateTimetable(state, requirements) {
 
       const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
       const teacher = teachers.find(t => t.id === chosenTeacherId);
-      if (teacher && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+      if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
 
       // OR group: all siblings must also have a free teacher for this slot
       let alternatives = null;
@@ -773,17 +773,10 @@ export function generateTimetable(state, requirements) {
   // their configured periodsPerWeek because the slot would otherwise be wasted.
   // Preference goes to the least-scheduled subject in that class (variety).
   {
-    // Identify fully-flexible teacher: no false entries in teacherAvailability
-    const isFlexibleTeacher = (tid) => {
-      const avMap = teacherAvailability?.[tid];
-      if (!avMap) return true;
-      return !activeDayKeys.some(dk =>
-        settings.periodTimings.filter(p => !p.isBreak)
-          .some(p => avMap[dk]?.[p.period] === false)
-      );
-    };
-
-    // Build per-class list of flexible assignments (subjectId + eligible teacherIds)
+    // Build per-class list of fill-eligible assignments (subjectId + teacherIds).
+    // Concurrent subjects are skip (they are demand-driven, not filler).
+    // OR-group subjects are skipped (they need sibling coordination).
+    // Per-slot availability is checked inside the candidates loop below.
     const flexPool = {};
     targetClasses.forEach(cls => {
       const entries = classAssignments
@@ -792,8 +785,7 @@ export function generateTimetable(state, requirements) {
           const sub = subjects.find(s => s.id === a.subjectId);
           if (!sub || sub.concurrent) return [];
           if (subjectOrGroupLabel[`${cls.id}__${a.subjectId}`]) return [];
-          const tids = (a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []))
-            .filter(isFlexibleTeacher);
+          const tids = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
           if (!tids.length) return [];
           return [{ subjectId: a.subjectId, teacherIds: tids }];
         });
@@ -819,7 +811,7 @@ export function generateTimetable(state, requirements) {
           const freeTids = fa.teacherIds.filter(tid =>
             !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
             teacherAvailability?.[tid]?.[dayKey]?.[period] !== false &&
-            (teacherLoad[tid] || 0) < (teachers.find(t => t.id === tid)?.maxPeriods ?? Infinity)
+            (teacherLoad[tid] || 0) < (teachers.find(t => t.id === tid)?.maxPeriods || Infinity)
           );
           return freeTids.length ? [{ subjectId: fa.subjectId, freeTids }] : [];
         });
