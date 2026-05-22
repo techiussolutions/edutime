@@ -119,17 +119,32 @@ export default function WizardPage() {
     });
   };
 
-  // Sets all subjects in an OR group to the same new period value
+  // Sets all subjects in an OR group to the same new period value.
+  // Also propagates to all other classes that share the same OR group structure
+  // (synchronized divisions — they all run the OR group at the same slot).
   const updateOrGroupPeriods = (classId, subjectIds, delta) => {
     setClassSubjectMap(prev => {
       const currentVal = prev[classId]?.find(s => subjectIds.includes(s.subjectId))?.periodsPerWeek ?? 0;
       const newVal = Math.max(0, Math.min(10, currentVal + delta));
-      const next = {
-        ...prev,
-        [classId]: prev[classId].map(s =>
-          subjectIds.includes(s.subjectId) ? { ...s, periodsPerWeek: newVal } : s
-        )
-      };
+      const subjectIdSet = new Set(subjectIds);
+
+      // Find all classes that have the same OR group (same set of subjectIds)
+      const classesWithSameOrGroup = new Set([classId]);
+      Object.entries(state.classOrGroups || {}).forEach(([cid, groups]) => {
+        if (groups.some(g => {
+          const gSet = new Set(g.subjectIds);
+          return gSet.size === subjectIdSet.size && [...subjectIdSet].every(s => gSet.has(s));
+        })) classesWithSameOrGroup.add(cid);
+      });
+
+      const next = { ...prev };
+      classesWithSameOrGroup.forEach(cid => {
+        if (prev[cid]) {
+          next[cid] = prev[cid].map(s =>
+            subjectIds.includes(s.subjectId) ? { ...s, periodsPerWeek: newVal } : s
+          );
+        }
+      });
       dispatch({ type: 'SET_PERIODS_CONFIG', payload: next });
       return next;
     });

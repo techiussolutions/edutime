@@ -775,6 +775,27 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
   const allOrGroupSubjectIds = new Set(
     Object.values(state.classOrGroups || {}).flatMap(groups => groups.flatMap(g => g.subjectIds))
   );
+
+  // Pre-pass: find the MAX configured periodsPerWeek per (teacher, OR-group-subject)
+  // across all divisions, so the load always reflects the correct config value
+  // regardless of which division we happen to iterate first.
+  const orGroupMaxPeriods = {}; // "tid__subjectId" -> max share
+  if (allOrGroupSubjectIds.size > 0) {
+    targetClasses.forEach(cls => {
+      (classSubjectMap[cls.id] || []).forEach(req => {
+        if (!allOrGroupSubjectIds.has(req.subjectId) || req.periodsPerWeek <= 0) return;
+        const asgn = classAssignments.find(a => a.classId === cls.id && a.subjectId === req.subjectId);
+        if (!asgn) return;
+        const tids = asgn.teacherIds?.length ? asgn.teacherIds : (asgn.teacherId ? [asgn.teacherId] : []);
+        tids.forEach(tid => {
+          const key = `${tid}__${req.subjectId}`;
+          const share = req.periodsPerWeek / tids.length;
+          orGroupMaxPeriods[key] = Math.max(orGroupMaxPeriods[key] || 0, share);
+        });
+      });
+    });
+  }
+
   const orGroupTeacherSubjectCounted = new Set(); // "tid__subjectId"
 
   targetClasses.forEach(cls => {
@@ -792,10 +813,14 @@ export function analyzeStaffing(state, classSubjectMap, selectedClassIds) {
         tids.forEach(tid => {
           const share = req.periodsPerWeek / tids.length;
           // For OR group subjects, each teacher only physically occupies one slot
-          // regardless of how many divisions they teach — count once per (teacher, subject).
+          // regardless of how many divisions they teach — count once per (teacher, subject)
+          // using the MAX configured value across all divisions.
           if (!isOrGroup || !orGroupTeacherSubjectCounted.has(`${tid}__${req.subjectId}`)) {
-            sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + share;
-            teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + share;
+            const periodsToAdd = isOrGroup
+              ? (orGroupMaxPeriods[`${tid}__${req.subjectId}`] || share)
+              : share;
+            sd.teacherPeriods[tid] = (sd.teacherPeriods[tid] || 0) + periodsToAdd;
+            teacherTotalPeriods[tid] = (teacherTotalPeriods[tid] || 0) + periodsToAdd;
             if (isOrGroup) orGroupTeacherSubjectCounted.add(`${tid}__${req.subjectId}`);
           }
           if (!sd.teacherClasses[tid]) sd.teacherClasses[tid] = [];
