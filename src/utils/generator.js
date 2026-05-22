@@ -86,6 +86,25 @@ export function generateTimetable(state, requirements) {
       }
     });
   });
+  // Auto-detect cross-class OR sync: if multiple target classes have OR groups
+  // with the same label, sync them automatically (no need to set syncClassIds explicitly).
+  {
+    const labelCls = {};
+    targetClasses.forEach(cls => {
+      (classOrGroups[cls.id] || []).forEach(grp => {
+        if (!grp.label || grp.subjectIds.length < 2) return;
+        if (!labelCls[grp.label]) labelCls[grp.label] = [];
+        labelCls[grp.label].push(cls.id);
+      });
+    });
+    Object.entries(labelCls).forEach(([label, cids]) => {
+      if (cids.length < 2) return;
+      cids.forEach(cid => {
+        const k = `${cid}__${label}`;
+        if (!syncGroupMap[k]) syncGroupMap[k] = cids.filter(c => c !== cid);
+      });
+    });
+  }
 
 
   // ── Step 1: Build demand list ─────────────────────────────────────────────
@@ -169,6 +188,39 @@ export function generateTimetable(state, requirements) {
   // For concurrent subjects, the same teacher covers multiple classes in ONE slot.
   // Track counted (teacher, day, period) keys so teacherLoad increments only once per slot.
   const concurrentLoadCounted = new Set();
+
+  // ── Concurrent sibling map ──────────────────────────────────────────────────
+  // Concurrent subject + same teacher → ALL those class demands must share the EXACT same slot.
+  // Map: "subjectId__teacherId" → demand[]
+  const concurrentSibMap = {};
+  demands.forEach(d => {
+    if (!d.concurrent) return;
+    d.teacherIds.forEach(tid => {
+      const k = `${d.subjectId}__${tid}`;
+      if (!concurrentSibMap[k]) concurrentSibMap[k] = [];
+      if (!concurrentSibMap[k].find(x => x.classId === d.classId)) concurrentSibMap[k].push(d);
+    });
+  });
+  // Returns true only when every concurrent sibling class is free at (dIdx, p)
+  const concSibsFree = (demand, tid, dIdx, p) => {
+    if (!demand.concurrent) return true;
+    return (concurrentSibMap[`${demand.subjectId}__${tid}`] || []).every(
+      s => s.classId === demand.classId || !classBusy.has(`${s.classId}_${dIdx}_${p}`)
+    );
+  };
+  // Place all concurrent sibling classes into the same slot
+  const placeConcurrentSibs = (demand, tid, dIdx, p) => {
+    if (!demand.concurrent) return;
+    for (const sib of (concurrentSibMap[`${demand.subjectId}__${tid}`] || [])) {
+      if (sib.classId === demand.classId || sib.remaining <= 0) continue;
+      if (classBusy.has(`${sib.classId}_${dIdx}_${p}`)) continue;
+      if ((classPeriodSettings[sib.classId]?.blockedPeriods || []).includes(p)) continue;
+      schedule.push({ id: `sch_${sib.classId}_${dIdx}_${p}`, classId: sib.classId, day: dIdx, period: p, teacherId: tid, subjectId: sib.subjectId });
+      classBusy.add(`${sib.classId}_${dIdx}_${p}`);
+      sib.remaining--;
+      sib.dayCount[dIdx] = (sib.dayCount[dIdx] || 0) + 1;
+    }
+  };
 
   // Daily load per teacher: { tid: { dayIdx: count } } — used to spread periods
   const teacherDayLoad = {};
@@ -312,6 +364,8 @@ export function generateTimetable(state, requirements) {
         const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
         if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+        // Concurrent: ALL sibling classes must be free at this slot
+        if (demand.concurrent && !concSibsFree(demand, chosenTeacherId, dayIdx, period)) continue;
 
         // Handle non-synced OR group siblings
         let alternatives = null;
@@ -350,6 +404,7 @@ export function generateTimetable(state, requirements) {
         }
         demand.remaining--;
         demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+        placeConcurrentSibs(demand, chosenTeacherId, dayIdx, period);
 
         if (demand.orGroup && alternatives) {
           for (const sib of alternatives) {
@@ -401,6 +456,8 @@ export function generateTimetable(state, requirements) {
       // Check weekly teacher cap
       const teacher = teachers.find(t => t.id === chosenTeacherId);
       if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+      // Concurrent: ALL sibling classes must be free at this slot
+      if (demand.concurrent && !concSibsFree(demand, chosenTeacherId, dayIdx, period)) continue;
 
       // ── Resolve OR-group siblings ───────────────────────────────────────
       let alternatives = null;
@@ -445,6 +502,7 @@ export function generateTimetable(state, requirements) {
       }
       demand.remaining--;
       demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+      placeConcurrentSibs(demand, chosenTeacherId, dayIdx, period);
 
       // Mark sibling teachers busy
       if (demand.orGroup && alternatives) {
@@ -571,6 +629,8 @@ export function generateTimetable(state, requirements) {
         const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
         const teacher = teachers.find(t => t.id === chosenTeacherId);
         if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+        // Concurrent: ALL sibling classes must be free at this slot
+        if (demand.concurrent && !concSibsFree(demand, chosenTeacherId, dayIdx, period)) continue;
 
         // Resolve OR-group siblings
         let alternatives = null;
@@ -607,6 +667,7 @@ export function generateTimetable(state, requirements) {
         bumpDayLoad(chosenTeacherId, dayIdx);
         demand.remaining--;
         demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+        placeConcurrentSibs(demand, chosenTeacherId, dayIdx, period);
 
         if (demand.orGroup && alternatives) {
           for (const sib of alternatives) {
@@ -717,6 +778,8 @@ export function generateTimetable(state, requirements) {
       const chosenTeacherId = pickBestTeacher(freeTeachers, dayIdx);
       const teacher = teachers.find(t => t.id === chosenTeacherId);
       if (teacher && teacher.maxPeriods > 0 && (teacherLoad[chosenTeacherId] || 0) >= teacher.maxPeriods) continue;
+      // Concurrent: ALL sibling classes must be free at this slot
+      if (demand.concurrent && !concSibsFree(demand, chosenTeacherId, dayIdx, period)) continue;
 
       // OR group: all siblings must also have a free teacher for this slot
       let alternatives = null;
@@ -752,6 +815,7 @@ export function generateTimetable(state, requirements) {
       }
       demand.remaining--;
       demand.dayCount[dayIdx] = (demand.dayCount[dayIdx] || 0) + 1;
+      placeConcurrentSibs(demand, chosenTeacherId, dayIdx, period);
 
       if (demand.orGroup && alternatives) {
         for (const sib of alternatives) {
