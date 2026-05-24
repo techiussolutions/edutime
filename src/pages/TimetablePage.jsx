@@ -241,6 +241,7 @@ export default function TimetablePage() {
       const alreadyHere = currentSlot?.subjectId === a.subjectId;
       const projectedCount = alreadyHere ? weekCount : weekCount + 1;
       const atLimit = configuredLimit !== null && projectedCount > configuredLimit;
+      const periodRestricted = (sub?.notInFirstN || 0) > 0 && period <= sub.notInFirstN;
       // How many other classes share this concurrent subject+teacher (for badge display)
       const concurrentClassCount = isConcurrent
         ? classAssignments.filter(ca =>
@@ -249,7 +250,7 @@ export default function TimetablePage() {
           ).length
         : 0;
 
-      return { sub, teacher, subjectId: a.subjectId, teacherId: a.teacherId, busy, unavailable, weekCount, configuredLimit, atLimit, isConcurrent, concurrentClassCount };
+      return { sub, teacher, subjectId: a.subjectId, teacherId: a.teacherId, busy, unavailable, weekCount, configuredLimit, atLimit, periodRestricted, isConcurrent, concurrentClassCount };
     }).filter(o => o.sub && o.teacher);
   }, [editing, classAssignments, subjects, teachers, schedule, state]);
 
@@ -296,10 +297,11 @@ export default function TimetablePage() {
           currentSlot.alternatives.some(a => a.subjectId === sid);
         const projectedCount = alreadyHereAlt ? weekCount : weekCount + 1;
         const atLimit = configuredLimit !== null && projectedCount > configuredLimit;
-        return { sub, teacher, subjectId: sid, teacherId, busy, unavailable, weekCount, configuredLimit, atLimit };
+        const periodRestricted = (sub?.notInFirstN || 0) > 0 && period <= sub.notInFirstN;
+        return { sub, teacher, subjectId: sid, teacherId, busy, unavailable, weekCount, configuredLimit, atLimit, periodRestricted };
       }).filter(Boolean);
       if (members.length < 2) return null;
-      const anyBusy = members.some(m => m.busy || m.unavailable || m.atLimit);
+      const anyBusy = members.some(m => m.busy || m.unavailable || m.atLimit || m.periodRestricted);
       const atLimitMember = members.find(m => m.atLimit);
       const isCurrentlyAssigned = currentSlot?.alternatives?.length > 1 &&
         members.every(m => currentSlot.alternatives.some(a => a.subjectId === m.subjectId));
@@ -320,7 +322,7 @@ export default function TimetablePage() {
 
   // ── Quick-assign from visual block ───────────────────────────────────────
   const quickAssign = (opt) => {
-    if (opt.busy || opt.unavailable || opt.atLimit) return;
+    if (opt.busy || opt.unavailable || opt.atLimit || opt.periodRestricted) return;
     const { classId, dayKey, period } = editing;
     const dIdx = DAY_IDX[dayKey];
     dispatch({ type:'ASSIGN_SLOT', payload:{ classId, day:dIdx, period, teacherId:opt.teacherId, subjectId:opt.subjectId } });
@@ -765,16 +767,21 @@ export default function TimetablePage() {
                       {/* OR group combined cards */}
                       {orGroupOptions.map(grp => {
                         const isAtLimit = !!grp.atLimitMember;
+                        const isPeriodRestricted = grp.members.some(m => m.periodRestricted);
                         const borderColor = isAtLimit ? '#f97316'
+                          : isPeriodRestricted ? '#d97706'
                           : grp.anyBusy ? 'var(--clr-red)'
                           : grp.isCurrentlyAssigned ? 'var(--clr-primary)'
                           : '#8b5cf6';
                         const bgColor = isAtLimit ? '#fff7ed'
+                          : isPeriodRestricted ? '#fffbeb'
                           : grp.anyBusy ? '#fef2f2'
                           : grp.isCurrentlyAssigned ? 'var(--clr-primary-l)'
                           : '#f5f3ff';
                         const titleText = isAtLimit
                           ? `Limit reached: ${grp.atLimitMember.sub.code} is at ${grp.atLimitMember.weekCount}/${grp.atLimitMember.configuredLimit} periods/week`
+                          : isPeriodRestricted
+                          ? `Period restricted: subject not allowed in first ${grp.members.find(m => m.periodRestricted)?.sub?.notInFirstN} period(s)`
                           : grp.anyBusy ? 'One or more teachers are busy this period'
                           : `Assign OR group: ${grp.label}`;
                         return (
@@ -802,16 +809,17 @@ export default function TimetablePage() {
                             </span>
                             <div style={{ fontSize:'.75rem', color: grp.anyBusy ? 'var(--clr-red)' : 'var(--tx-muted)', marginTop:'.3rem' }}>
                               {grp.members.map(m => m.teacher.name.split(' ')[0]).join(' / ')}
-                              {grp.anyBusy && !isAtLimit && <span style={{ fontWeight:700 }}> · BUSY</span>}
+                              {grp.anyBusy && !isAtLimit && !isPeriodRestricted && <span style={{ fontWeight:700 }}> · BUSY</span>}
                             </div>
                             {/* Per-member period counts */}
-                            <div style={{ fontSize:'.67rem', color: isAtLimit ? '#ea580c' : 'var(--tx-muted)', marginTop:'.25rem', fontWeight: isAtLimit ? 700 : 400 }}>
+                            <div style={{ fontSize:'.67rem', color: isAtLimit ? '#ea580c' : isPeriodRestricted ? '#d97706' : 'var(--tx-muted)', marginTop:'.25rem', fontWeight: (isAtLimit || isPeriodRestricted) ? 700 : 400 }}>
                               {grp.members.map(m =>
                                 m.configuredLimit !== null
                                   ? `${m.sub.code}: ${m.weekCount}/${m.configuredLimit}`
                                   : `${m.sub.code}: ${m.weekCount}`
                               ).join(' · ')}
                               {isAtLimit && ' · LIMIT'}
+                              {isPeriodRestricted && ' · RESTRICTED'}
                             </div>
                             {grp.isCurrentlyAssigned && !grp.anyBusy && (
                               <span style={{ position:'absolute', top:4, right:6, fontSize:'.65rem', color:'var(--clr-primary)', fontWeight:700 }}>✓ current</span>
@@ -830,20 +838,24 @@ export default function TimetablePage() {
                         return visualOptions.filter(o => !orSubjectIds.has(o.subjectId)).map(opt => {
                         const currentSlot = getCellData(editing.classId, editing.dayKey, editing.period);
                         const isCurrentlyAssigned = currentSlot?.subjectId===opt.subjectId;
-                        const blocked = opt.busy || opt.unavailable || opt.atLimit;
+                        const blocked = opt.busy || opt.unavailable || opt.atLimit || opt.periodRestricted;
                         const borderColor = opt.atLimit ? '#f97316'
+                          : opt.periodRestricted ? '#d97706'
                           : opt.busy ? 'var(--clr-red)'
                           : isCurrentlyAssigned ? 'var(--clr-primary)'
                           : 'var(--border)';
                         const bgColor = opt.atLimit ? '#fff7ed'
+                          : opt.periodRestricted ? '#fffbeb'
                           : opt.busy ? '#fef2f2'
                           : isCurrentlyAssigned ? 'var(--clr-primary-l)'
                           : 'var(--bg-card)';
                         const pillColor = opt.atLimit ? '#f97316'
+                          : opt.periodRestricted ? '#d97706'
                           : opt.busy ? '#fca5a5'
                           : 'var(--clr-primary)';
                         const titleText = opt.atLimit
                           ? `Already at limit: ${opt.weekCount}/${opt.configuredLimit} periods this week`
+                          : opt.periodRestricted ? `Not allowed in first ${opt.sub?.notInFirstN} period${opt.sub?.notInFirstN > 1 ? 's' : ''} of the day`
                           : opt.unavailable ? `${opt.teacher?.name} is not available this period`
                           : opt.busy ? `${opt.teacher?.name} is already teaching another class this period`
                           : `Assign ${opt.sub?.name} (${opt.teacher?.name})`;
@@ -873,6 +885,7 @@ export default function TimetablePage() {
                               <User size={11}/> {opt.teacher?.name?.split(' ')[0]}
                               {opt.busy && <span style={{ fontWeight:700 }}>· BUSY</span>}
                               {opt.unavailable && <span style={{ fontWeight:700 }}>· UNAVAILABLE</span>}
+                              {opt.periodRestricted && <span style={{ fontWeight:700, color:'#d97706' }}>· RESTRICTED</span>}
                             </div>
                             <div style={{ fontSize:'.68rem', color: opt.atLimit ? '#ea580c' : 'var(--tx-muted)', marginTop:'.2rem', fontWeight: opt.atLimit ? 700 : 400 }}>
                               {opt.configuredLimit !== null

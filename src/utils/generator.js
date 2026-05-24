@@ -181,9 +181,10 @@ export function generateTimetable(state, requirements) {
         return sum + avail;
       }, 0);
       const concurrent = !!(subjectMap[req.subjectId]?.concurrent);
+      const notInFirstN = subjectMap[req.subjectId]?.notInFirstN || 0;
       demands.push({ classId: cls.id, subjectId: req.subjectId, teacherIds,
         remaining: req.periodsPerWeek, orGroup, dayBudget, dayCount: {}, concurrent,
-        availableSlotCount, availDays: daysForBudget });
+        availableSlotCount, availDays: daysForBudget, notInFirstN });
     });
   });
 
@@ -381,6 +382,7 @@ export function generateTimetable(state, requirements) {
         if ((demand.dayCount[dayIdx] || 0) >= (demand.dayBudget[dayIdx] ?? 0)) continue;
         if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
         if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+        if (demand.notInFirstN > 0 && period <= demand.notInFirstN) continue;
 
         const freeTeachers = demand.teacherIds.filter(tid =>
           !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
@@ -466,6 +468,8 @@ export function generateTimetable(state, requirements) {
       if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
       // Skip this slot if the period is blocked for this class
       if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+      // Skip if subject is restricted from early periods
+      if (demand.notInFirstN > 0 && period <= demand.notInFirstN) continue;
 
       // Pick the best available teacher from the pool.
       // Concurrent subjects skip the teacher-busy check — the same teacher
@@ -899,6 +903,8 @@ export function generateTimetable(state, requirements) {
 
         // Among flexible assignments, find those with a free teacher under cap
         const candidates = pool.flatMap(fa => {
+          const subNotInFirstN = subjects.find(s => s.id === fa.subjectId)?.notInFirstN || 0;
+          if (subNotInFirstN > 0 && period <= subNotInFirstN) return [];
           const freeTids = fa.teacherIds.filter(tid =>
             !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
             teacherAvailability?.[tid]?.[dayKey]?.[period] !== false &&

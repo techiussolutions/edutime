@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../../store/AppStore';
 import { Plus, Pencil, Trash2, BookOpen, Users } from 'lucide-react';
 
-const EMPTY = { name:'', code:'', applicableClasses:[], concurrent: false };
+const EMPTY = { name:'', code:'', applicableClasses:[], concurrent: false, notInFirstN: 0 };
 
 export default function SubjectsPage() {
   const { state, dispatch } = useApp();
@@ -67,6 +67,13 @@ export default function SubjectsPage() {
                   <Users size={10}/> Concurrent
                 </div>
               )}
+              {sub.notInFirstN > 0 && (
+                <div style={{ display:'flex', alignItems:'center', gap:'.3rem', fontSize:'.72rem',
+                  color:'#b45309', background:'#fffbeb', border:'1px solid #fcd34d',
+                  borderRadius:'var(--r-md)', padding:'.2rem .5rem', marginBottom:'.5rem', width:'fit-content' }}>
+                  Not in first {sub.notInFirstN} period{sub.notInFirstN > 1 ? 's' : ''}
+                </div>
+              )}
               <div style={{ display:'flex', gap:'.25rem', flexWrap:'wrap' }}>
                 {(() => {
                   const knownClasses = (sub.applicableClasses || [])
@@ -106,6 +113,15 @@ export default function SubjectsPage() {
                   When enabled, this subject can be assigned to multiple classes at the same period without causing a teacher clash
                   (e.g. Assembly, Morning Prayer, PE where all classes participate simultaneously).
                 </p>
+              </div>
+              <div className="field">
+                <label>Not in first ___ periods <span style={{ fontWeight:400, color:'var(--tx-muted)' }}>(optional)</span></label>
+                <div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}>
+                  <input type="number" className="input" min={0} max={10} style={{ width:80 }}
+                    value={form.notInFirstN || 0}
+                    onChange={e => setForm(p => ({ ...p, notInFirstN: Math.max(0, parseInt(e.target.value, 10) || 0) }))}/>
+                  <span style={{ fontSize:'.82rem', color:'var(--tx-muted)' }}>Set to 0 to disable. E.g. set 2 to skip Period 1 &amp; 2 during auto-generation.</span>
+                </div>
               </div>
               <div className="field">
                 <label>Applicable Classes</label>
