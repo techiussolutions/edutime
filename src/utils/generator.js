@@ -110,11 +110,31 @@ export function generateTimetable(state, requirements) {
   // ── Step 1: Build demand list ─────────────────────────────────────────────
   // OR-group siblings share the same slot — only the FIRST sibling in a group
   // is added as a demand (it drags its siblings along when scheduled).
+
+  // Pre-scan: collect (classId__subjectId) pairs that have at least one VALID
+  // per-teacher entry (teacher still in current assignment). These take precedence
+  // over any no-teacherId entry for the same pair, preventing double-counting.
+  const perTeacherSubjectKeys = new Set(); // `${classId}__${subjectId}`
+  targetClasses.forEach(cls => {
+    (classSubjectMap[cls.id] || []).forEach(req => {
+      if (!req.teacherId || req.periodsPerWeek <= 0) return;
+      const validIds = assignmentMap[`${cls.id}__${req.subjectId}`] || [];
+      if (validIds.includes(req.teacherId)) perTeacherSubjectKeys.add(`${cls.id}__${req.subjectId}`);
+    });
+  });
+
   const orGroupLeaders = new Set();
   const demands = [];
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
       if (req.periodsPerWeek <= 0) return;
+      // Drop stale per-teacher entries whose teacher is no longer assigned
+      if (req.teacherId) {
+        const validIds = assignmentMap[`${cls.id}__${req.subjectId}`] || [];
+        if (!validIds.includes(req.teacherId)) return;
+      }
+      // Drop no-teacherId entries when valid per-teacher entries already cover this subject
+      if (!req.teacherId && perTeacherSubjectKeys.has(`${cls.id}__${req.subjectId}`)) return;
       // If the entry has a specific teacherId (per-teacher split), use only that teacher.
       // Otherwise fall back to the full pool from classAssignments.
       const teacherIds = req.teacherId
@@ -1184,9 +1204,15 @@ export function mergeNewSubjects(map, clsList, assignments) {
     // Clean existing entries:
     //   - drop orphaned subjects (no longer assigned to this class)
     //   - drop old single/no-teacher entries for subjects now using multi-teacher
+    //   - drop per-teacher entries whose teacher is no longer in the current assignment
     const filteredExisting = existing.filter(r => {
       if (!assignedSubjectIds.has(r.subjectId)) return false;          // orphaned
       if (multiTeacherSubjectIds.has(r.subjectId) && !r.teacherId) return false; // stale
+      if (r.teacherId) {
+        const asgn = clsAssignments.find(a => a.subjectId === r.subjectId);
+        const validIds = asgn?.teacherIds?.length ? asgn.teacherIds : (asgn?.teacherId ? [asgn.teacherId] : []);
+        if (!validIds.includes(r.teacherId)) return false;             // teacher no longer assigned
+      }
       return true;
     });
 
@@ -1204,7 +1230,9 @@ export function mergeNewSubjects(map, clsList, assignments) {
           }
         });
       } else {
-        if (!existingKeys.has(a.subjectId)) {
+        // Only add a no-teacherId entry if no per-teacher entry already exists for this subject
+        const hasPTEntry = filteredExisting.some(r => r.subjectId === a.subjectId && r.teacherId);
+        if (!existingKeys.has(a.subjectId) && !hasPTEntry) {
           newEntries.push({ subjectId: a.subjectId, periodsPerWeek: 0 });
         }
       }
