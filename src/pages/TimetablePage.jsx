@@ -287,7 +287,10 @@ export default function TimetablePage() {
       const atLimitMember = members.find(m => m.atLimit);
       const isCurrentlyAssigned = currentSlot?.alternatives?.length > 1 &&
         members.every(m => currentSlot.alternatives.some(a => a.subjectId === m.subjectId));
-      const syncClassCount = grp.syncClassIds?.length || 0;
+      // Count ALL classes sharing the same OR group label (auto-detected sync)
+      const syncClassCount = Object.keys(state.classOrGroups || {}).filter(
+        cid => cid !== classId && (state.classOrGroups[cid] || []).some(g => g.label === grp.label)
+      ).length;
       return { label: grp.label, members, anyBusy, atLimitMember, isCurrentlyAssigned, syncClassCount };
     }).filter(Boolean);
   }, [editing, state.classOrGroups, classAssignments, subjects, teachers, schedule, teacherAvailability]);
@@ -327,23 +330,24 @@ export default function TimetablePage() {
       teacherId: primary.teacherId, subjectId: primary.subjectId,
       alternatives: grp.members.map(m => ({ subjectId: m.subjectId, teacherId: m.teacherId })),
     }});
-    // Cross-class OR group sync: propagate same OR group slot to all synced classes
-    const srcGrpDef = (state.classOrGroups?.[classId] || []).find(g => g.label === grp.label);
-    (srcGrpDef?.syncClassIds || []).forEach(syncCid => {
-      const syncGrpDef = (state.classOrGroups?.[syncCid] || []).find(g => g.label === grp.label);
-      if (!syncGrpDef) return;
-      const syncMembers = syncGrpDef.subjectIds.map(sid => {
-        const a = classAssignments.find(a2 => a2.classId === syncCid && a2.subjectId === sid);
-        const tid = a?.teacherIds?.[0] || a?.teacherId;
-        return tid ? { subjectId: sid, teacherId: tid } : null;
-      }).filter(Boolean);
-      if (syncMembers.length < 2) return;
-      dispatch({ type:'ASSIGN_SLOT', payload:{
-        classId: syncCid, day:dIdx, period,
-        teacherId: syncMembers[0].teacherId, subjectId: syncMembers[0].subjectId,
-        alternatives: syncMembers,
-      }});
-    });
+    // Cross-class OR group sync: propagate to ALL classes sharing the same OR group label
+    Object.entries(state.classOrGroups || {})
+      .filter(([cid, groups]) => cid !== classId && groups.some(g => g.label === grp.label))
+      .forEach(([syncCid]) => {
+        const syncGrpDef = (state.classOrGroups[syncCid] || []).find(g => g.label === grp.label);
+        if (!syncGrpDef) return;
+        const syncMembers = syncGrpDef.subjectIds.map(sid => {
+          const a = classAssignments.find(a2 => a2.classId === syncCid && a2.subjectId === sid);
+          const tid = a?.teacherIds?.[0] || a?.teacherId;
+          return tid ? { subjectId: sid, teacherId: tid } : null;
+        }).filter(Boolean);
+        if (syncMembers.length < 2) return;
+        dispatch({ type:'ASSIGN_SLOT', payload:{
+          classId: syncCid, day:dIdx, period,
+          teacherId: syncMembers[0].teacherId, subjectId: syncMembers[0].subjectId,
+          alternatives: syncMembers,
+        }});
+      });
     setEditing(null); setConflict(null);
   };
 
