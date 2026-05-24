@@ -124,6 +124,7 @@ export function generateTimetable(state, requirements) {
   });
 
   const orGroupLeaders = new Set();
+  const noTeacherSeenKeys = new Set(); // deduplicate no-teacherId entries per (classId, subjectId)
   const demands = [];
   targetClasses.forEach(cls => {
     (classSubjectMap[cls.id] || []).forEach(req => {
@@ -135,6 +136,12 @@ export function generateTimetable(state, requirements) {
       }
       // Drop no-teacherId entries when valid per-teacher entries already cover this subject
       if (!req.teacherId && perTeacherSubjectKeys.has(`${cls.id}__${req.subjectId}`)) return;
+      // Drop duplicate no-teacherId entries for the same (classId, subjectId)
+      if (!req.teacherId) {
+        const k = `${cls.id}__${req.subjectId}`;
+        if (noTeacherSeenKeys.has(k)) return;
+        noTeacherSeenKeys.add(k);
+      }
       // If the entry has a specific teacherId (per-teacher split), use only that teacher.
       // Otherwise fall back to the full pool from classAssignments.
       const teacherIds = req.teacherId
@@ -1237,7 +1244,15 @@ export function mergeNewSubjects(map, clsList, assignments) {
         }
       }
     });
-    merged[cls.id] = [...filteredExisting, ...newEntries];
+    // Deduplicate: keep only the first no-teacherId entry per subjectId
+    const seenNoTeacher = new Set();
+    const deduped = [...filteredExisting, ...newEntries].filter(r => {
+      if (r.teacherId) return true;
+      if (seenNoTeacher.has(r.subjectId)) return false;
+      seenNoTeacher.add(r.subjectId);
+      return true;
+    });
+    merged[cls.id] = deduped;
   });
   return merged;
 }

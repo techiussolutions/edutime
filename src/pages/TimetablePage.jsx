@@ -223,11 +223,18 @@ export default function TimetablePage() {
         )
       ).length;
 
-      // Configured periods/week limit for this subject in this class
-      // Sum across all entries (multi-teacher subjects have one entry per teacher)
-      const subjectEntries = periodsConfig[classId]?.filter(r => r.subjectId === a.subjectId) ?? [];
-      const configuredLimit = subjectEntries.length > 0
-        ? subjectEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
+      // Configured periods/week limit: only count valid entries (mirrors generator rules)
+      const validTids = a.teacherIds?.length ? a.teacherIds : (a.teacherId ? [a.teacherId] : []);
+      const allSubjEntries = periodsConfig[classId]?.filter(r => r.subjectId === a.subjectId) ?? [];
+      const hasValidPT = allSubjEntries.some(r => r.teacherId && validTids.includes(r.teacherId));
+      let _seenNoT = false;
+      const validSubjEntries = allSubjEntries.filter(r => {
+        if (r.teacherId) return validTids.includes(r.teacherId);
+        if (hasValidPT || _seenNoT) return false;
+        _seenNoT = true; return true;
+      });
+      const configuredLimit = validSubjEntries.length > 0
+        ? validSubjEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
         : null;
       // If assigning to this slot, would the total exceed the limit?
       // If this slot already holds this subject, re-assigning keeps count the same.
@@ -272,9 +279,18 @@ export default function TimetablePage() {
             s.alternatives?.some(alt => alt.subjectId === sid)
           )
         ).length;
-        const subjectEntries = state.periodsConfig?.[classId]?.filter(r => r.subjectId === sid) ?? [];
-        const configuredLimit = subjectEntries.length > 0
-          ? subjectEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
+        const memberAssignment = classAssignments.find(a => a.classId === classId && a.subjectId === sid);
+        const memberValidTids = memberAssignment?.teacherIds?.length ? memberAssignment.teacherIds : (memberAssignment?.teacherId ? [memberAssignment.teacherId] : []);
+        const allMemberEntries = state.periodsConfig?.[classId]?.filter(r => r.subjectId === sid) ?? [];
+        const memberHasPT = allMemberEntries.some(r => r.teacherId && memberValidTids.includes(r.teacherId));
+        let _mSeenNoT = false;
+        const validMemberEntries = allMemberEntries.filter(r => {
+          if (r.teacherId) return memberValidTids.includes(r.teacherId);
+          if (memberHasPT || _mSeenNoT) return false;
+          _mSeenNoT = true; return true;
+        });
+        const configuredLimit = validMemberEntries.length > 0
+          ? validMemberEntries.reduce((sum, r) => sum + (r.periodsPerWeek ?? 0), 0)
           : null;
         const alreadyHereAlt = currentSlot?.alternatives?.length > 1 &&
           currentSlot.alternatives.some(a => a.subjectId === sid);
