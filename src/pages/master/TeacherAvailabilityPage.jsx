@@ -320,16 +320,33 @@ export default function TeacherAvailabilityPage() {
                 </table>
               </div>
 
-              {/* Legend */}
-              <div style={{ display: 'flex', gap: '1.25rem', marginTop: '.75rem', fontSize: '.78rem', color: 'var(--tx-muted)', alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 3, background: '#f0fdf4', border: '1.5px solid #86efac', display: 'inline-block' }} />
-                  Free — teacher can be scheduled
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fef2f2', border: '1.5px solid #fca5a5', display: 'inline-block' }} />
-                  Off — generator will skip this slot
-                </span>
+              {/* Legend + Save */}
+              <div style={{ display: 'flex', gap: '1.25rem', marginTop: '.75rem', fontSize: '.78rem', color: 'var(--tx-muted)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: '#f0fdf4', border: '1.5px solid #86efac', display: 'inline-block' }} />
+                    Free — teacher can be scheduled
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fef2f2', border: '1.5px solid #fca5a5', display: 'inline-block' }} />
+                    Off — generator will skip this slot
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem' }}>
+                  {isDirty && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={saveAvailability}
+                      disabled={saving}
+                      style={{ gap: '.375rem' }}
+                    >
+                      <Save size={13} />{saving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                  )}
+                  {saved && !isDirty && (
+                    <span className="badge badge-green" style={{ padding: '.35rem .75rem', fontSize: '.8rem' }}>✓ Saved!</span>
+                  )}
+                </div>
               </div>
             </>
           ) : (
