@@ -8,7 +8,7 @@ const AppContext = createContext();
 // ── DB SHAPE MAPPERS (from DB row → app shape) ──────────────
 const mapTeacherFromDb = (r)  => ({ id: r.id, name: r.name, department: r.department, subjects: r.subjects, maxPeriods: r.max_periods, phone: r.phone, email: r.email, designation: r.designation, joining: r.joining, active: r.active });
 const mapClassFromDb  = (r)   => ({ id: r.id, name: r.name, grade: r.grade, section: r.section, classTeacherId: r.class_teacher_id });
-const mapSubjectFromDb = (r)  => ({ id: r.id, name: r.name, code: r.code, applicableClasses: r.applicable_classes || [], orGroup: r.or_group || '', concurrent: r.concurrent || false });
+const mapSubjectFromDb = (r)  => ({ id: r.id, name: r.name, code: r.code, applicableClasses: r.applicable_classes || [], orGroup: r.or_group || '', concurrent: r.concurrent || false, notInFirstN: r.not_in_first_n || 0 });
 const mapAssignFromDb = (r)   => ({ id: r.id, classId: r.class_id, subjectId: r.subject_id,
   teacherIds: r.teacher_ids?.length ? r.teacher_ids : (r.teacher_id ? [r.teacher_id] : []),
   teacherId:  r.teacher_ids?.[0] || r.teacher_id || '' });  // primary (compat)
