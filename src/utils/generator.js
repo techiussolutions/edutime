@@ -1235,7 +1235,7 @@ export function generateTimetable(state, requirements) {
     // single-class regeneration) so Step 5c aligns to the already-placed positions.
     const contextOrPositions = {}; // label → { `day_period` → count }
     (contextSchedule || []).forEach(slot => {
-      if (!slot.alternatives || slot.alternatives.length < 2) return;
+      if (!slot.alternatives || slot.alternatives.length < 1) return;
       const classGroups = classOrGroups[slot.classId] || [];
       const matched = classGroups.find(g =>
         g.subjectIds.includes(slot.subjectId) ||
@@ -1249,7 +1249,7 @@ export function generateTimetable(state, requirements) {
 
     const orSyncGroups = {}; // groupLabel → [slotIdx]
     schedule.forEach((slot, idx) => {
-      if (!slot.alternatives || slot.alternatives.length < 2) return;
+      if (!slot.alternatives || slot.alternatives.length < 1) return;
       const classGroups = classOrGroups[slot.classId] || [];
       const matched = classGroups.find(g =>
         g.subjectIds.includes(slot.subjectId) ||
