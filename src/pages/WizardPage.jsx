@@ -727,7 +727,7 @@ export default function WizardPage() {
                       <tr>
                         <th className="day-col">Day</th>
                         {previewPeriods.map(p => (
-                          <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{formatAMPM(p.start)}</span></th>
+                          <th key={p.period}>{p.label}<br /><span style={{ fontWeight: 400, fontSize: '.7rem' }}>{formatAMPM(p.start)}{p.end ? ` – ${formatAMPM(p.end)}` : ''}</span></th>
                         ))}
                       </tr>
                     </thead>
