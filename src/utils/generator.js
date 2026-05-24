@@ -216,6 +216,9 @@ export function generateTimetable(state, requirements) {
   // For concurrent subjects, the same teacher covers multiple classes in ONE slot.
   // Track counted (teacher, day, period) keys so teacherLoad increments only once per slot.
   const concurrentLoadCounted = new Set();
+  // OR-group teachers claimed at a slot: `${tid}_${dayIdx}_${period}__${label}`
+  // The same teacher can serve the same OR group in multiple synced classes (like concurrent).
+  const orGroupTeacherSlots = new Set();
 
   // ── Concurrent sibling map ──────────────────────────────────────────────────
   // Concurrent subject + same teacher → ALL those class demands must share the EXACT same slot.
@@ -423,6 +426,7 @@ export function generateTimetable(state, requirements) {
           alternatives,
         });
         teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+        if (demand.orGroup) orGroupTeacherSlots.add(`${chosenTeacherId}_${dayIdx}_${period}__${demand.orGroup}`);
         classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
         // Concurrent: only count this slot once even if same teacher covers multiple classes
         const _concKey3a = `${chosenTeacherId}_${dayIdx}_${period}`;
@@ -439,6 +443,7 @@ export function generateTimetable(state, requirements) {
           for (const sib of alternatives) {
             if (sib.teacherId === chosenTeacherId) continue;
             teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+            orGroupTeacherSlots.add(`${sib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
             teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
             bumpDayLoad(sib.teacherId, dayIdx);
             const sibDemand = demands.find(
@@ -521,6 +526,7 @@ export function generateTimetable(state, requirements) {
         alternatives,
       });
       teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+      if (demand.orGroup) orGroupTeacherSlots.add(`${chosenTeacherId}_${dayIdx}_${period}__${demand.orGroup}`);
       classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
       usedTeachersThisSlot.add(chosenTeacherId);
       usedClassesThisSlot.add(demand.classId);
@@ -540,6 +546,7 @@ export function generateTimetable(state, requirements) {
         for (const sib of alternatives) {
           if (sib.teacherId === chosenTeacherId) continue;
           teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+          orGroupTeacherSlots.add(`${sib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
           usedTeachersThisSlot.add(sib.teacherId);
           teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
           bumpDayLoad(sib.teacherId, dayIdx);
@@ -582,10 +589,11 @@ export function generateTimetable(state, requirements) {
           if (!syncLeaderDemand) continue;
 
           // Resolve free teachers for all subjects in the synced class's OR group
+          // OR-group teachers can serve multiple synced classes at the same slot (like concurrent)
           const syncAlts = syncSiblings.map(sib => {
             const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
-              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
-              !usedTeachersThisSlot.has(tid) &&
+              (!teacherBusy.has(`${tid}_${dayIdx}_${period}`) || orGroupTeacherSlots.has(`${tid}_${dayIdx}_${period}__${demand.orGroup}`)) &&
+              (!usedTeachersThisSlot.has(tid) || orGroupTeacherSlots.has(`${tid}_${dayIdx}_${period}__${demand.orGroup}`)) &&
               teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
             );
             const chosen = freeSibTeachers.length
@@ -609,6 +617,7 @@ export function generateTimetable(state, requirements) {
             alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
           });
           teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+          orGroupTeacherSlots.add(`${leaderAlt.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
           classBusy.add(`${syncCid}_${dayIdx}_${period}`);
           usedTeachersThisSlot.add(leaderAlt.teacherId);
           usedClassesThisSlot.add(syncCid);
@@ -621,6 +630,7 @@ export function generateTimetable(state, requirements) {
             if (syncSib.subjectId === leaderAlt.subjectId) continue;
             if (syncSib.teacherId === leaderAlt.teacherId) continue;
             teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+            orGroupTeacherSlots.add(`${syncSib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
             usedTeachersThisSlot.add(syncSib.teacherId);
             teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
             const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
@@ -692,6 +702,7 @@ export function generateTimetable(state, requirements) {
           alternatives,
         });
         teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+        if (demand.orGroup) orGroupTeacherSlots.add(`${chosenTeacherId}_${dayIdx}_${period}__${demand.orGroup}`);
         classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
         usedTeachersThisSlot.add(chosenTeacherId);
         usedClassesThisSlot.add(demand.classId);
@@ -705,6 +716,7 @@ export function generateTimetable(state, requirements) {
           for (const sib of alternatives) {
             if (sib.teacherId === chosenTeacherId) continue;
             teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+            orGroupTeacherSlots.add(`${sib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
             usedTeachersThisSlot.add(sib.teacherId);
             teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
             bumpDayLoad(sib.teacherId, dayIdx);
@@ -744,8 +756,8 @@ export function generateTimetable(state, requirements) {
 
             const syncAlts = syncSiblings.map(sib => {
               const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
-                !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
-                !usedTeachersThisSlot.has(tid) &&
+                (!teacherBusy.has(`${tid}_${dayIdx}_${period}`) || orGroupTeacherSlots.has(`${tid}_${dayIdx}_${period}__${demand.orGroup}`)) &&
+                (!usedTeachersThisSlot.has(tid) || orGroupTeacherSlots.has(`${tid}_${dayIdx}_${period}__${demand.orGroup}`)) &&
                 teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
               );
               const chosen = freeSibTeachers.length
@@ -767,6 +779,7 @@ export function generateTimetable(state, requirements) {
               alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
             });
             teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+            orGroupTeacherSlots.add(`${leaderAlt.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
             classBusy.add(`${syncCid}_${dayIdx}_${period}`);
             usedTeachersThisSlot.add(leaderAlt.teacherId);
             usedClassesThisSlot.add(syncCid);
@@ -778,6 +791,7 @@ export function generateTimetable(state, requirements) {
               if (syncSib.subjectId === leaderAlt.subjectId) continue;
               if (syncSib.teacherId === leaderAlt.teacherId) continue;
               teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+              orGroupTeacherSlots.add(`${syncSib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
               usedTeachersThisSlot.add(syncSib.teacherId);
               teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
               const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
@@ -839,6 +853,7 @@ export function generateTimetable(state, requirements) {
         alternatives,
       });
       teacherBusy.add(`${chosenTeacherId}_${dayIdx}_${period}`);
+      if (demand.orGroup) orGroupTeacherSlots.add(`${chosenTeacherId}_${dayIdx}_${period}__${demand.orGroup}`);
       classBusy.add(`${demand.classId}_${dayIdx}_${period}`);
       const _cKey = `${chosenTeacherId}_${dayIdx}_${period}`;
       if (!demand.concurrent || !concurrentLoadCounted.has(_cKey)) {
@@ -854,6 +869,7 @@ export function generateTimetable(state, requirements) {
         for (const sib of alternatives) {
           if (sib.teacherId === chosenTeacherId) continue;
           teacherBusy.add(`${sib.teacherId}_${dayIdx}_${period}`);
+          orGroupTeacherSlots.add(`${sib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
           teacherLoad[sib.teacherId] = (teacherLoad[sib.teacherId] || 0) + 1;
           bumpDayLoad(sib.teacherId, dayIdx);
           const sibDemand = demands.find(d => d.classId === demand.classId && d.subjectId === sib.subjectId);
@@ -887,7 +903,7 @@ export function generateTimetable(state, requirements) {
 
           const syncAlts = syncSiblings.map(sib => {
             const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
-              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+              (!teacherBusy.has(`${tid}_${dayIdx}_${period}`) || orGroupTeacherSlots.has(`${tid}_${dayIdx}_${period}__${demand.orGroup}`)) &&
               teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
             );
             const chosen = freeSibTeachers.length
@@ -909,6 +925,7 @@ export function generateTimetable(state, requirements) {
             alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
           });
           teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+          orGroupTeacherSlots.add(`${leaderAlt.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
           classBusy.add(`${syncCid}_${dayIdx}_${period}`);
           teacherLoad[leaderAlt.teacherId] = (teacherLoad[leaderAlt.teacherId] || 0) + 1;
           syncLeaderDemand.remaining--;
@@ -918,6 +935,7 @@ export function generateTimetable(state, requirements) {
             if (syncSib.subjectId === leaderAlt.subjectId) continue;
             if (syncSib.teacherId === leaderAlt.teacherId) continue;
             teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+            orGroupTeacherSlots.add(`${syncSib.teacherId}_${dayIdx}_${period}__${demand.orGroup}`);
             teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
             const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
             if (syncSibDemand) syncSibDemand.remaining--;
