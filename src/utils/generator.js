@@ -937,6 +937,289 @@ export function generateTimetable(state, requirements) {
     }
   }
 
+  // ── Step 5: Post-generation repair pass ───────────────────────────────────
+  // Scan all generated (non-locked) slots for hard constraint violations and
+  // sync issues. Attempt to fix by swapping within the same class.
+  //
+  // Violations checked:
+  //   (a) notInFirstN      — subject placed in a restricted early period
+  //   (b) teacherUnavail   — teacher marked unavailable at that slot
+  //   (c) blockedPeriod    — class has this period blocked
+  //   (d) altTeacherUnavail — OR-group alternative teacher unavailable
+  //   (e) concurrent misalignment — sibling classes not at same day+period
+  //   (f) OR-group cross-class sync — synced classes have group at different slots
+  {
+    const IDX_TO_DAY_KEY = Object.fromEntries(
+      Object.entries(DAY_KEY_TO_IDX).map(([k, v]) => [v, k])
+    );
+
+    // Returns the first violated constraint for a slot, or null if clean
+    const getViolation = (slot) => {
+      const dayKey = IDX_TO_DAY_KEY[slot.day];
+      const sub = subjects.find(s => s.id === slot.subjectId);
+      if (sub?.notInFirstN > 0 && slot.period <= sub.notInFirstN) return 'notInFirstN';
+      if (slot.teacherId && teacherAvailability?.[slot.teacherId]?.[dayKey]?.[slot.period] === false) return 'teacherUnavail';
+      if ((classPeriodSettings[slot.classId]?.blockedPeriods || []).includes(slot.period)) return 'blockedPeriod';
+      if (slot.alternatives) {
+        for (const alt of slot.alternatives) {
+          if (alt.teacherId && teacherAvailability?.[alt.teacherId]?.[dayKey]?.[slot.period] === false) return 'altTeacherUnavail';
+        }
+      }
+      return null;
+    };
+
+    const isConcurrent = (subjectId) => !!(subjects.find(s => s.id === subjectId)?.concurrent);
+
+    // Build position maps: teacher/class → schedule index
+    // Concurrent teacher slots are excluded from tMap (they can share)
+    const buildMaps = () => {
+      const tMap = new Map(); // `${tid}_${day}_${period}` → idx
+      const cMap = new Map(); // `${classId}_${day}_${period}` → idx
+      schedule.forEach((s, idx) => {
+        cMap.set(`${s.classId}_${s.day}_${s.period}`, idx);
+        if (s.teacherId && !isConcurrent(s.subjectId)) tMap.set(`${s.teacherId}_${s.day}_${s.period}`, idx);
+        (s.alternatives || []).forEach(alt => {
+          if (alt.teacherId) tMap.set(`${alt.teacherId}_${s.day}_${s.period}`, idx);
+        });
+      });
+      return { tMap, cMap };
+    };
+
+    let { tMap, cMap } = buildMaps();
+
+    // ── (a-d) Hard constraint repair: swap violating slot with a partner in same class ──
+    for (let i = 0; i < schedule.length; i++) {
+      const slot = schedule[i];
+      if (lockedSlotIds.has(slot.id)) continue;
+      const violation = getViolation(slot);
+      if (!violation) continue;
+
+      let fixed = false;
+      for (let j = 0; j < schedule.length; j++) {
+        if (i === j) continue;
+        const partner = schedule[j];
+        if (partner.classId !== slot.classId) continue;
+        if (lockedSlotIds.has(partner.id)) continue;
+
+        // Build the swapped versions
+        const slotAt   = { ...slot,    day: partner.day, period: partner.period, id: `sch_${slot.classId}_${partner.day}_${partner.period}` };
+        const partnerAt = { ...partner, day: slot.day,    period: slot.period,    id: `sch_${partner.classId}_${slot.day}_${slot.period}` };
+
+        // Both sides must be constraint-clean after the swap
+        if (getViolation(slotAt) || getViolation(partnerAt)) continue;
+
+        // Check teacher cross-class conflicts for non-concurrent subjects
+        const slotConc    = isConcurrent(slot.subjectId);
+        const partnerConc = isConcurrent(partner.subjectId);
+
+        // slot.teacher moving to partner's position — must not conflict with another class
+        if (!slotConc && slot.teacherId) {
+          const key = `${slot.teacherId}_${partner.day}_${partner.period}`;
+          if (tMap.has(key) && tMap.get(key) !== j) continue;
+        }
+        // partner.teacher moving to slot's position — must not conflict with another class
+        if (!partnerConc && partner.teacherId) {
+          const key = `${partner.teacherId}_${slot.day}_${slot.period}`;
+          if (tMap.has(key) && tMap.get(key) !== i) continue;
+        }
+        // Also check all OR-group alternative teachers
+        let altConflict = false;
+        for (const alt of (slot.alternatives || [])) {
+          if (alt.teacherId) {
+            const key = `${alt.teacherId}_${partner.day}_${partner.period}`;
+            if (tMap.has(key) && tMap.get(key) !== j) { altConflict = true; break; }
+          }
+        }
+        if (altConflict) continue;
+        for (const alt of (partner.alternatives || [])) {
+          if (alt.teacherId) {
+            const key = `${alt.teacherId}_${slot.day}_${slot.period}`;
+            if (tMap.has(key) && tMap.get(key) !== i) { altConflict = true; break; }
+          }
+        }
+        if (altConflict) continue;
+
+        // ✅ Valid swap — apply it
+        schedule[i] = slotAt;
+        schedule[j] = partnerAt;
+
+        // Update cMap
+        cMap.delete(`${slot.classId}_${slot.day}_${slot.period}`);
+        cMap.delete(`${partner.classId}_${partner.day}_${partner.period}`);
+        cMap.set(`${slot.classId}_${partner.day}_${partner.period}`, i);
+        cMap.set(`${partner.classId}_${slot.day}_${slot.period}`, j);
+
+        // Update tMap for primary teachers
+        if (!slotConc && slot.teacherId) {
+          tMap.delete(`${slot.teacherId}_${slot.day}_${slot.period}`);
+          tMap.set(`${slot.teacherId}_${partner.day}_${partner.period}`, i);
+        }
+        if (!partnerConc && partner.teacherId) {
+          tMap.delete(`${partner.teacherId}_${partner.day}_${partner.period}`);
+          tMap.set(`${partner.teacherId}_${slot.day}_${slot.period}`, j);
+        }
+        // Update tMap for OR-group alternatives
+        (slot.alternatives || []).forEach(alt => {
+          if (alt.teacherId) {
+            tMap.delete(`${alt.teacherId}_${slot.day}_${slot.period}`);
+            tMap.set(`${alt.teacherId}_${partner.day}_${partner.period}`, i);
+          }
+        });
+        (partner.alternatives || []).forEach(alt => {
+          if (alt.teacherId) {
+            tMap.delete(`${alt.teacherId}_${partner.day}_${partner.period}`);
+            tMap.set(`${alt.teacherId}_${slot.day}_${slot.period}`, j);
+          }
+        });
+
+        fixed = true;
+        break;
+      }
+
+      if (!fixed) {
+        const sub = subjects.find(s => s.id === slot.subjectId);
+        const cls = classes.find(c => c.id === slot.classId);
+        warnings.push(`⚠ Repair failed: ${cls?.name} – ${sub?.name} at ${IDX_TO_DAY_KEY[slot.day]} P${slot.period} (${violation}). No valid swap found.`);
+      }
+    }
+
+    // ── (e) Concurrent subject alignment ─────────────────────────────────────
+    // All slots for the same concurrent subject+teacher must be at the same day+period.
+    const concGroups = {};
+    schedule.forEach((s, idx) => {
+      if (!isConcurrent(s.subjectId) || !s.teacherId) return;
+      const key = `${s.subjectId}__${s.teacherId}`;
+      (concGroups[key] = concGroups[key] || []).push(idx);
+    });
+
+    for (const indices of Object.values(concGroups)) {
+      if (indices.length <= 1) continue;
+      // Group by position
+      const posMap = {};
+      indices.forEach(idx => {
+        const s = schedule[idx];
+        const k = `${s.day}_${s.period}`;
+        (posMap[k] = posMap[k] || []).push(idx);
+      });
+      if (Object.keys(posMap).length === 1) continue; // already aligned ✓
+
+      // Align all to the position held by the largest group
+      const [targetKey, ] = Object.entries(posMap).sort((a, b) => b[1].length - a[1].length)[0];
+      const [targetDay, targetPeriod] = targetKey.split('_').map(Number);
+      const targetDayKey = IDX_TO_DAY_KEY[targetDay];
+
+      for (const [posKey, idxList] of Object.entries(posMap)) {
+        if (posKey === targetKey) continue;
+        for (const idx of idxList) {
+          if (lockedSlotIds.has(schedule[idx].id)) continue;
+          const slot = schedule[idx];
+
+          // If target position is occupied by another (non-concurrent) slot for this class, try to swap it out
+          const blockKey = `${slot.classId}_${targetDay}_${targetPeriod}`;
+          if (cMap.has(blockKey) && cMap.get(blockKey) !== idx) {
+            const bIdx = cMap.get(blockKey);
+            const blocker = schedule[bIdx];
+            if (!lockedSlotIds.has(blocker.id)) {
+              const blockerMoved = { ...blocker, day: slot.day, period: slot.period, id: `sch_${blocker.classId}_${slot.day}_${slot.period}` };
+              if (!getViolation(blockerMoved)) {
+                schedule[bIdx] = blockerMoved;
+                cMap.delete(blockKey);
+                cMap.set(`${blocker.classId}_${slot.day}_${slot.period}`, bIdx);
+                if (!isConcurrent(blocker.subjectId) && blocker.teacherId) {
+                  tMap.delete(`${blocker.teacherId}_${targetDay}_${targetPeriod}`);
+                  tMap.set(`${blocker.teacherId}_${slot.day}_${slot.period}`, bIdx);
+                }
+              } else { continue; }
+            } else { continue; }
+          }
+
+          const moved = { ...slot, day: targetDay, period: targetPeriod, id: `sch_${slot.classId}_${targetDay}_${targetPeriod}` };
+          if (getViolation(moved)) { continue; }
+
+          schedule[idx] = moved;
+          cMap.delete(`${slot.classId}_${slot.day}_${slot.period}`);
+          cMap.set(`${slot.classId}_${targetDay}_${targetPeriod}`, idx);
+          // Concurrent teacher not in tMap, so no tMap update needed
+        }
+      }
+    }
+
+    // ── (f) OR-group cross-class sync alignment ───────────────────────────────
+    // Detect OR group slots that are synced across classes but landed on different
+    // day+period slots. Align them to the most common position.
+    const orSyncGroups = {}; // groupLabel → [slotIdx]
+    schedule.forEach((slot, idx) => {
+      if (!slot.alternatives || slot.alternatives.length < 2) return;
+      const classGroups = classOrGroups[slot.classId] || [];
+      const matched = classGroups.find(g =>
+        g.subjectIds.includes(slot.subjectId) ||
+        g.subjectIds.some(sid => slot.alternatives.some(a => a.subjectId === sid))
+      );
+      if (!matched) return;
+      // Only care if this label appears in another class too
+      const synced = Object.entries(classOrGroups).some(
+        ([cid, gs]) => cid !== slot.classId && gs.some(g => g.label === matched.label)
+      );
+      if (!synced) return;
+      (orSyncGroups[matched.label] = orSyncGroups[matched.label] || []).push(idx);
+    });
+
+    for (const [label, indices] of Object.entries(orSyncGroups)) {
+      if (indices.length <= 1) continue;
+      const posMap = {};
+      indices.forEach(idx => {
+        const s = schedule[idx];
+        const k = `${s.day}_${s.period}`;
+        (posMap[k] = posMap[k] || []).push(idx);
+      });
+      if (Object.keys(posMap).length === 1) continue; // already synced ✓
+
+      const [targetKey, ] = Object.entries(posMap).sort((a, b) => b[1].length - a[1].length)[0];
+      const [targetDay, targetPeriod] = targetKey.split('_').map(Number);
+      const targetDayKey = IDX_TO_DAY_KEY[targetDay];
+
+      for (const [posKey, idxList] of Object.entries(posMap)) {
+        if (posKey === targetKey) continue;
+        for (const idx of idxList) {
+          if (lockedSlotIds.has(schedule[idx].id)) continue;
+          const slot = schedule[idx];
+
+          const moved = { ...slot, day: targetDay, period: targetPeriod, id: `sch_${slot.classId}_${targetDay}_${targetPeriod}` };
+          if (getViolation(moved)) continue;
+
+          // Target position must be free for this class
+          const blockKey = `${slot.classId}_${targetDay}_${targetPeriod}`;
+          if (cMap.has(blockKey) && cMap.get(blockKey) !== idx) continue;
+
+          // All alternative teachers must be free at the target slot
+          let altConflict = false;
+          for (const alt of (slot.alternatives || [])) {
+            if (alt.teacherId) {
+              const key = `${alt.teacherId}_${targetDay}_${targetPeriod}`;
+              if (tMap.has(key) && tMap.get(key) !== idx) { altConflict = true; break; }
+            }
+          }
+          if (altConflict) continue;
+
+          // ✅ Move
+          schedule[idx] = moved;
+          cMap.delete(`${slot.classId}_${slot.day}_${slot.period}`);
+          cMap.set(`${slot.classId}_${targetDay}_${targetPeriod}`, idx);
+          if (slot.teacherId) {
+            tMap.delete(`${slot.teacherId}_${slot.day}_${slot.period}`);
+            tMap.set(`${slot.teacherId}_${targetDay}_${targetPeriod}`, idx);
+          }
+          (slot.alternatives || []).forEach(alt => {
+            if (alt.teacherId) {
+              tMap.delete(`${alt.teacherId}_${slot.day}_${slot.period}`);
+              tMap.set(`${alt.teacherId}_${targetDay}_${targetPeriod}`, idx);
+            }
+          });
+        }
+      }
+    }
+  }
+
   // ── Step 4: Warnings ──────────────────────────────────────────────────────
   unassigned.forEach(msg => warnings.push(msg));
 
