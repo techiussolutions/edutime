@@ -127,23 +127,6 @@ export default function TeacherAvailabilityPage() {
           <h2>Teacher Availability</h2>
           <p>Set which periods each teacher is available on each working day. All periods are available by default.</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem' }}>
-          {isDirty && (
-            <button
-              className="btn btn-primary"
-              onClick={saveAvailability}
-              disabled={saving}
-              style={{ gap: '.375rem' }}
-            >
-              <Save size={14} />{saving ? 'Saving…' : 'Save Changes'}
-            </button>
-          )}
-          {saved && !isDirty && (
-            <div className="badge badge-green" style={{ padding: '.4rem .8rem', fontSize: '.85rem' }}>
-              ✓ Saved!
-            </div>
-          )}
-        </div>
       </div>
 
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start' }}>
@@ -259,6 +242,23 @@ export default function TeacherAvailabilityPage() {
                     — click a day to toggle. Blocked days will be skipped entirely by the generator.
                   </span>
                 </div>
+                {(isDirty || (saved && !isDirty)) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem', marginTop: '.625rem', paddingTop: '.625rem', borderTop: '1px solid var(--border)' }}>
+                    {isDirty && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={saveAvailability}
+                        disabled={saving}
+                        style={{ gap: '.375rem' }}
+                      >
+                        <Save size={13} />{saving ? 'Saving…' : 'Save Changes'}
+                      </button>
+                    )}
+                    {saved && !isDirty && (
+                      <span className="badge badge-green" style={{ padding: '.35rem .75rem', fontSize: '.8rem' }}>✓ Saved!</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Info banner */}
