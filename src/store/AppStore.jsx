@@ -489,6 +489,7 @@ export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, null, buildInitial);
   const [dbLoaded, setDbLoaded] = useState(false);
   const settingsSyncTimer = useRef(null);
+  const availSyncTimers = useRef({}); // per-teacher debounce timers
   const prevSchoolId = useRef(null);
 
   // ── Reset state on logout (schoolId becomes null) ────────
@@ -543,9 +544,19 @@ export function AppProvider({ children }) {
   const dbDispatch = useCallback((action) => {
     dispatch(action);
     if (schoolId && dbLoaded) {
-      syncActionToNeon(action, schoolId).catch(err =>
-        console.error('[AppStore] Neon sync failed for', action.type, err)
-      );
+      if (action.type === 'SET_TEACHER_AVAILABILITY') {
+        // Debounce per-teacher: rapid toggles only fire one API call
+        const { teacherId, availability } = action.payload;
+        clearTimeout(availSyncTimers.current[teacherId]);
+        availSyncTimers.current[teacherId] = setTimeout(() => {
+          syncAction('SET_TEACHER_AVAILABILITY', schoolId, { teacherId, availability })
+            .catch(err => console.error('[AppStore] Availability sync failed', err));
+        }, 800);
+      } else {
+        syncActionToNeon(action, schoolId).catch(err =>
+          console.error('[AppStore] Neon sync failed for', action.type, err)
+        );
+      }
     }
   }, [schoolId, dbLoaded]);
 

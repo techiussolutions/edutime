@@ -218,17 +218,36 @@ export default async function handler(req, res) {
       // ── Teacher availability ────────────────────────────
       case 'SET_TEACHER_AVAILABILITY': {
         const { teacherId, availability } = payload;
-        await db`DELETE FROM teacher_availability WHERE teacher_id = ${teacherId} AND school_id = ${schoolId}`;
-        if (availability) {
-          for (const [dayKey, periods] of Object.entries(availability)) {
-            for (const [period, avail] of Object.entries(periods)) {
-              const avId = `av_${teacherId}_${dayKey}_${period}`;
-              await db`
-                INSERT INTO teacher_availability (id, school_id, teacher_id, day_key, period, available)
-                VALUES (${avId}, ${schoolId}, ${teacherId}, ${dayKey}, ${parseInt(period)}, ${!!avail})
-              `;
-            }
+        if (!availability || Object.keys(availability).length === 0) {
+          await db`DELETE FROM teacher_availability WHERE teacher_id = ${teacherId} AND school_id = ${schoolId}`;
+          break;
+        }
+        // Build all rows to upsert
+        const newRows = [];
+        for (const [dayKey, periods] of Object.entries(availability)) {
+          for (const [period, avail] of Object.entries(periods)) {
+            newRows.push({
+              id: `av_${teacherId}_${dayKey}_${period}`,
+              dayKey,
+              period: parseInt(period, 10),
+              avail: !!avail,
+            });
           }
+        }
+        if (newRows.length === 0) {
+          await db`DELETE FROM teacher_availability WHERE teacher_id = ${teacherId} AND school_id = ${schoolId}`;
+          break;
+        }
+        // Remove stale rows (periods no longer in the map) — safe even if called concurrently
+        const newIds = newRows.map(r => r.id);
+        await db`DELETE FROM teacher_availability WHERE teacher_id = ${teacherId} AND school_id = ${schoolId} AND NOT (id = ANY(${newIds}))`;
+        // Upsert each row — ON CONFLICT makes this idempotent / race-safe
+        for (const row of newRows) {
+          await db`
+            INSERT INTO teacher_availability (id, school_id, teacher_id, day_key, period, available)
+            VALUES (${row.id}, ${schoolId}, ${teacherId}, ${row.dayKey}, ${row.period}, ${row.avail})
+            ON CONFLICT (id, school_id) DO UPDATE SET available = EXCLUDED.available
+          `;
         }
         break;
       }
