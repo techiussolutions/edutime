@@ -30,7 +30,7 @@ function shuffle(arr) {
 
 export function generateTimetable(state, requirements) {
   const { teachers, classes, subjects, settings, classAssignments = [], classPeriodSettings = {}, teacherAvailability = {}, classOrGroups = {} } = state;
-  const { classSubjectMap, selectedClassIds } = requirements;
+  const { classSubjectMap, selectedClassIds, contextSchedule } = requirements;
 
   const targetClasses = selectedClassIds
     ? classes.filter(c => selectedClassIds.includes(c.id))
@@ -1213,6 +1213,22 @@ export function generateTimetable(state, requirements) {
     // ── (f) OR-group cross-class sync alignment ───────────────────────────────
     // Detect OR group slots that are synced across classes but landed on different
     // day+period slots. Align them to the most common position.
+    // Build reference positions from contextSchedule (existing other-class slots during
+    // single-class regeneration) so Step 5c aligns to the already-placed positions.
+    const contextOrPositions = {}; // label → { `day_period` → count }
+    (contextSchedule || []).forEach(slot => {
+      if (!slot.alternatives || slot.alternatives.length < 2) return;
+      const classGroups = classOrGroups[slot.classId] || [];
+      const matched = classGroups.find(g =>
+        g.subjectIds.includes(slot.subjectId) ||
+        g.subjectIds.some(sid => slot.alternatives.some(a => a.subjectId === sid))
+      );
+      if (!matched) return;
+      if (!contextOrPositions[matched.label]) contextOrPositions[matched.label] = {};
+      const k = `${slot.day}_${slot.period}`;
+      contextOrPositions[matched.label][k] = (contextOrPositions[matched.label][k] || 0) + 1;
+    });
+
     const orSyncGroups = {}; // groupLabel → [slotIdx]
     schedule.forEach((slot, idx) => {
       if (!slot.alternatives || slot.alternatives.length < 2) return;
@@ -1240,7 +1256,15 @@ export function generateTimetable(state, requirements) {
       });
       if (Object.keys(posMap).length === 1) continue; // already synced ✓
 
-      const [targetKey, ] = Object.entries(posMap).sort((a, b) => b[1].length - a[1].length)[0];
+      // Prefer the position that already exists in contextSchedule (other classes);
+      // fallback to the position held by the largest group in this schedule.
+      const ctxPos = contextOrPositions[label] || {};
+      const [targetKey, ] = Object.entries(posMap).sort((a, b) => {
+        const aCtx = ctxPos[a[0]] || 0;
+        const bCtx = ctxPos[b[0]] || 0;
+        if (bCtx !== aCtx) return bCtx - aCtx;
+        return b[1].length - a[1].length;
+      })[0];
       const [targetDay, targetPeriod] = targetKey.split('_').map(Number);
       const targetDayKey = IDX_TO_DAY_KEY[targetDay];
 
@@ -1253,9 +1277,30 @@ export function generateTimetable(state, requirements) {
           const moved = { ...slot, day: targetDay, period: targetPeriod, id: `sch_${slot.classId}_${targetDay}_${targetPeriod}` };
           if (getViolation(moved)) continue;
 
-          // Target position must be free for this class
+          // Target position must be free for this class — displace blocker if possible
           const blockKey = `${slot.classId}_${targetDay}_${targetPeriod}`;
-          if (cMap.has(blockKey) && cMap.get(blockKey) !== idx) continue;
+          if (cMap.has(blockKey) && cMap.get(blockKey) !== idx) {
+            const bIdx = cMap.get(blockKey);
+            const blocker = schedule[bIdx];
+            if (!lockedSlotIds.has(blocker.id)) {
+              const blockerMoved = { ...blocker, day: slot.day, period: slot.period, id: `sch_${blocker.classId}_${slot.day}_${slot.period}` };
+              if (!getViolation(blockerMoved)) {
+                schedule[bIdx] = blockerMoved;
+                cMap.delete(blockKey);
+                cMap.set(`${blocker.classId}_${slot.day}_${slot.period}`, bIdx);
+                if (blocker.teacherId && !isConcurrent(blocker.subjectId)) {
+                  tMap.delete(`${blocker.teacherId}_${targetDay}_${targetPeriod}`);
+                  tMap.set(`${blocker.teacherId}_${slot.day}_${slot.period}`, bIdx);
+                }
+                (blocker.alternatives || []).forEach(alt => {
+                  if (alt.teacherId) {
+                    tMap.delete(`${alt.teacherId}_${targetDay}_${targetPeriod}`);
+                    tMap.set(`${alt.teacherId}_${slot.day}_${slot.period}`, bIdx);
+                  }
+                });
+              } else { continue; }
+            } else { continue; }
+          }
 
           // All alternative teachers must be free at the target slot
           let altConflict = false;

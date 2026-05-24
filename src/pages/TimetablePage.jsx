@@ -88,12 +88,13 @@ export default function TimetablePage() {
     try {
       await new Promise(r => setTimeout(r, 0));
       const classSubjectMap = state.periodsConfig || {};
+      const existingOther = schedule.filter(s => s.classId !== selectedClass);
       const result = generateTimetable(state, {
         classSubjectMap,
         selectedClassIds: [selectedClass],
+        contextSchedule: existingOther,
       });
       // Keep all other classes; generator already re-includes locked slots for this class
-      const existingOther = schedule.filter(s => s.classId !== selectedClass);
       dispatch({ type: 'BULK_SET_SCHEDULE', payload: [...existingOther, ...result.schedule] });
     } catch (err) {
       console.error('Regenerate class error:', err);
