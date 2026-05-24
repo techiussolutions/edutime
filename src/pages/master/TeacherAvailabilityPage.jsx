@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../store/AppStore';
 import { formatAMPM } from '../../utils/formatTime';
-import { CalendarCheck, RotateCcw, CheckSquare, Square, Search } from 'lucide-react';
+import { CalendarCheck, RotateCcw, CheckSquare, Square, Search, Save } from 'lucide-react';
 
 const DAY_IDX = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5 };
 
@@ -11,7 +11,24 @@ export default function TeacherAvailabilityPage() {
 
   const [selectedTeacherId, setSelectedTeacherId] = useState(teachers[0]?.id ?? '');
   const [search, setSearch] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved]   = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving,  setSaving]  = useState(false);
+
+  // Local copy of availability for the selected teacher (unsaved edits live here)
+  const [localAvail, setLocalAvail] = useState(() => ({
+    ...(teacherAvailability?.[teachers[0]?.id] ?? {})
+  }));
+
+  // Reload local state when teacher selection changes (discard unsaved edits for the old teacher)
+  const prevTeacherRef = useRef(selectedTeacherId);
+  useEffect(() => {
+    if (selectedTeacherId !== prevTeacherRef.current) {
+      prevTeacherRef.current = selectedTeacherId;
+      setLocalAvail({ ...(teacherAvailability?.[selectedTeacherId] ?? {}) });
+      setIsDirty(false);
+    }
+  }, [selectedTeacherId, teacherAvailability]);
 
   const activeDays = useMemo(
     () => Object.entries(settings.workingDays).filter(([, v]) => v).map(([k]) => k).sort((a,b) => DAY_IDX[a] - DAY_IDX[b]),
@@ -27,72 +44,70 @@ export default function TeacherAvailabilityPage() {
     t.department.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Get availability for the selected teacher
-  // true (or absent) = available, false = not available
-  const getAvail = (teacherId, dayKey, period) => {
-    const val = teacherAvailability?.[teacherId]?.[dayKey]?.[period];
-    return val !== false; // default to available
-  };
+  // Get availability from local state (selected teacher only)
+  const getAvail = (dayKey, period) => localAvail?.[dayKey]?.[period] !== false;
 
-  // Count blocked slots for a teacher
+  // Count blocked slots — uses local state for selected teacher, store for others
   const countBlocked = (teacherId) => {
+    const avMap = teacherId === selectedTeacherId
+      ? localAvail
+      : (teacherAvailability?.[teacherId] ?? {});
     let count = 0;
-    const avMap = teacherAvailability?.[teacherId] ?? {};
-    for (const dayKey of activeDays) {
-      for (const p of nonBreakPeriods) {
+    for (const dayKey of activeDays)
+      for (const p of nonBreakPeriods)
         if (avMap?.[dayKey]?.[p.period] === false) count++;
-      }
-    }
     return count;
   };
 
-  const toast = () => { setSaved(true); setTimeout(() => setSaved(false), 1800); };
-
   const toggleSlot = (dayKey, period) => {
     if (!selectedTeacherId) return;
-    const current = getAvail(selectedTeacherId, dayKey, period);
-    // Build a fresh copy of this teacher's availability
-    const teacherAvMap = { ...(teacherAvailability?.[selectedTeacherId] ?? {}) };
-    const dayMap = { ...(teacherAvMap[dayKey] ?? {}) };
-    dayMap[period] = !current; // flip
-    teacherAvMap[dayKey] = dayMap;
-    dispatch({
-      type: 'SET_TEACHER_AVAILABILITY',
-      payload: { teacherId: selectedTeacherId, availability: teacherAvMap }
-    });
-    toast();
+    const current = getAvail(dayKey, period);
+    const newAvail = { ...localAvail };
+    const dayMap = { ...(newAvail[dayKey] ?? {}) };
+    dayMap[period] = !current;
+    newAvail[dayKey] = dayMap;
+    setLocalAvail(newAvail);
+    setIsDirty(true);
   };
 
   const setAllForDay = (dayKey, value) => {
     if (!selectedTeacherId) return;
-    const teacherAvMap = { ...(teacherAvailability?.[selectedTeacherId] ?? {}) };
+    const newAvail = { ...localAvail };
     if (value === true) {
-      // Remove explicit entries so the day reverts to "available by default"
-      delete teacherAvMap[dayKey];
+      delete newAvail[dayKey];
     } else {
       const dayMap = {};
       nonBreakPeriods.forEach(p => { dayMap[p.period] = false; });
-      teacherAvMap[dayKey] = dayMap;
+      newAvail[dayKey] = dayMap;
     }
-    dispatch({
-      type: 'SET_TEACHER_AVAILABILITY',
-      payload: { teacherId: selectedTeacherId, availability: teacherAvMap }
-    });
-    toast();
+    setLocalAvail(newAvail);
+    setIsDirty(true);
   };
 
   // Is this day considered "available" (i.e. not ALL periods blocked)?
   const isDayAvailable = (teacherId, dayKey) => {
-    const avMap = teacherAvailability?.[teacherId] ?? {};
+    const avMap = teacherId === selectedTeacherId
+      ? localAvail
+      : (teacherAvailability?.[teacherId] ?? {});
     const dayMap = avMap[dayKey];
-    if (!dayMap) return true; // no entries → default available
+    if (!dayMap) return true;
     return nonBreakPeriods.some(p => dayMap[p.period] !== false);
   };
 
   const resetTeacher = () => {
     if (!selectedTeacherId) return;
-    dispatch({ type: 'SET_TEACHER_AVAILABILITY', payload: { teacherId: selectedTeacherId, availability: null } });
-    toast();
+    setLocalAvail({});
+    setIsDirty(true);
+  };
+
+  const saveAvailability = () => {
+    if (!selectedTeacherId || !isDirty) return;
+    setSaving(true);
+    dispatch({ type: 'SET_TEACHER_AVAILABILITY', payload: { teacherId: selectedTeacherId, availability: localAvail } });
+    setIsDirty(false);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   const teacher = teachers.find(t => t.id === selectedTeacherId);
@@ -112,11 +127,23 @@ export default function TeacherAvailabilityPage() {
           <h2>Teacher Availability</h2>
           <p>Set which periods each teacher is available on each working day. All periods are available by default.</p>
         </div>
-        {saved && (
-          <div className="badge badge-green" style={{ padding: '.4rem .8rem', fontSize: '.85rem' }}>
-            ✓ Saved!
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem' }}>
+          {isDirty && (
+            <button
+              className="btn btn-primary"
+              onClick={saveAvailability}
+              disabled={saving}
+              style={{ gap: '.375rem' }}
+            >
+              <Save size={14} />{saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          )}
+          {saved && !isDirty && (
+            <div className="badge badge-green" style={{ padding: '.4rem .8rem', fontSize: '.85rem' }}>
+              ✓ Saved!
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start' }}>
@@ -261,7 +288,7 @@ export default function TeacherAvailabilityPage() {
                           <div style={{ fontSize: '.72rem', color: 'var(--tx-muted)' }}>{formatAMPM(p.start)} – {formatAMPM(p.end)}</div>
                         </td>
                         {activeDays.map(day => {
-                          const isAvail = getAvail(selectedTeacherId, day, p.period);
+                          const isAvail = getAvail(day, p.period);
                           return (
                             <td key={day} style={{ padding: '.375rem .5rem', textAlign: 'center' }}>
                               <button
