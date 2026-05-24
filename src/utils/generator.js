@@ -649,6 +649,7 @@ export function generateTimetable(state, requirements) {
         if (usedClassesThisSlot.has(demand.classId)) continue;
         if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
         if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+        if (demand.notInFirstN > 0 && period <= demand.notInFirstN) continue;
 
         const freeTeachers = demand.teacherIds.filter(tid =>
           (demand.concurrent || !teacherBusy.has(`${tid}_${dayIdx}_${period}`)) &&
@@ -799,6 +800,7 @@ export function generateTimetable(state, requirements) {
       if (demand.remaining <= 0) break;
       if (classBusy.has(`${demand.classId}_${dayIdx}_${period}`)) continue;
       if ((classPeriodSettings[demand.classId]?.blockedPeriods || []).includes(period)) continue;
+      if (demand.notInFirstN > 0 && period <= demand.notInFirstN) continue;
 
       const freeTeachers = demand.teacherIds.filter(tid =>
         (demand.concurrent || !teacherBusy.has(`${tid}_${dayIdx}_${period}`)) &&
@@ -856,6 +858,70 @@ export function generateTimetable(state, requirements) {
           bumpDayLoad(sib.teacherId, dayIdx);
           const sibDemand = demands.find(d => d.classId === demand.classId && d.subjectId === sib.subjectId);
           if (sibDemand) sibDemand.remaining--;
+        }
+
+        // ── Cross-class OR sync (cleanup pass) ──
+        const syncClsIds = syncGroupMap[`${demand.classId}__${demand.orGroup}`] || [];
+        for (const syncCid of syncClsIds) {
+          if (classBusy.has(`${syncCid}_${dayIdx}_${period}`)) continue;
+          if ((classPeriodSettings[syncCid]?.blockedPeriods || []).includes(period)) continue;
+
+          let syncLeaderDemand = demands.find(d => d.classId === syncCid && d.orGroup === demand.orGroup && d.remaining > 0);
+          let syncSiblings = orGroupIndex[`${syncCid}__${demand.orGroup}`];
+          if (!syncSiblings?.length) {
+            const sourceSiblings = orGroupIndex[`${demand.classId}__${demand.orGroup}`] || [];
+            syncSiblings = sourceSiblings.map(s => ({
+              subjectId: s.subjectId,
+              teacherIds: assignmentMap[`${syncCid}__${s.subjectId}`] || [],
+            })).filter(s => s.teacherIds.length > 0);
+          }
+          if (!syncSiblings?.length) continue;
+
+          if (!syncLeaderDemand) {
+            for (const sib of syncSiblings) {
+              syncLeaderDemand = demands.find(d => d.classId === syncCid && d.subjectId === sib.subjectId && d.remaining > 0);
+              if (syncLeaderDemand) break;
+            }
+          }
+          if (!syncLeaderDemand) continue;
+
+          const syncAlts = syncSiblings.map(sib => {
+            const freeSibTeachers = (sib.teacherIds || []).filter(tid =>
+              !teacherBusy.has(`${tid}_${dayIdx}_${period}`) &&
+              teacherAvailability?.[tid]?.[dayKey]?.[period] !== false
+            );
+            const chosen = freeSibTeachers.length
+              ? freeSibTeachers.reduce((best, tid) =>
+                  (teacherLoad[tid] || 0) < (teacherLoad[best] || 0) ? tid : best)
+              : null;
+            return { subjectId: sib.subjectId, teacherId: chosen, free: !!chosen };
+          });
+          if (!syncAlts.every(s => s.free)) continue;
+
+          const leaderAlt = syncAlts.find(s => s.subjectId === syncLeaderDemand.subjectId) || syncAlts[0];
+          const leaderTeacherObj = teachers.find(t => t.id === leaderAlt.teacherId);
+          if (leaderTeacherObj && leaderTeacherObj.maxPeriods > 0 && (teacherLoad[leaderAlt.teacherId] || 0) >= leaderTeacherObj.maxPeriods) continue;
+
+          schedule.push({
+            id: `sch_${syncCid}_${dayIdx}_${period}`,
+            classId: syncCid, day: dayIdx, period,
+            teacherId: leaderAlt.teacherId, subjectId: leaderAlt.subjectId,
+            alternatives: syncAlts.map(({ subjectId, teacherId }) => ({ subjectId, teacherId })),
+          });
+          teacherBusy.add(`${leaderAlt.teacherId}_${dayIdx}_${period}`);
+          classBusy.add(`${syncCid}_${dayIdx}_${period}`);
+          teacherLoad[leaderAlt.teacherId] = (teacherLoad[leaderAlt.teacherId] || 0) + 1;
+          syncLeaderDemand.remaining--;
+          syncLeaderDemand.dayCount[dayIdx] = (syncLeaderDemand.dayCount[dayIdx] || 0) + 1;
+
+          for (const syncSib of syncAlts) {
+            if (syncSib.subjectId === leaderAlt.subjectId) continue;
+            if (syncSib.teacherId === leaderAlt.teacherId) continue;
+            teacherBusy.add(`${syncSib.teacherId}_${dayIdx}_${period}`);
+            teacherLoad[syncSib.teacherId] = (teacherLoad[syncSib.teacherId] || 0) + 1;
+            const syncSibDemand = demands.find(d => d.classId === syncCid && d.subjectId === syncSib.subjectId);
+            if (syncSibDemand) syncSibDemand.remaining--;
+          }
         }
       }
     }
